@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.qtide.module" android:versionCode="1" android:versionName="1.0">
+    package="com.qtide.module" android:versionCode="1" android:versionName="1.2">
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:label="Qtide" android:hasCode="true">
-        <!-- the class mochy makes, read from here; without this line the module is "has no entry meta-data" -->
-        <meta-data android:name="com.mochyy.mochymusic.module.entry" android:value="com.qtide.QtideModule" />
+    <application android:label="Qtide module" android:hasCode="true">
+        <!-- ENTRY is swapped by build.sh: com.qtide.QtideTidal, QtideQobuz or QtideDeezer -->
+        <meta-data android:name="com.mochyy.mochymusic.module.entry" android:value="com.qtide.ENTRY" />
     </application>
 </manifest>

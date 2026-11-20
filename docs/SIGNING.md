@@ -30,7 +30,7 @@ RELEASE=1 KEYSTORE=qtide.jks KS_PASS=… KEY_ALIAS=qtide sh ./build.sh
 ## Checking a zip before sending it
 
 ```sh
-unzip -l qtide-debug.mochyymodule.zip                 # manifest.json + module.apk
+unzip -l qtide-<service>-debug.mochyymodule.zip                 # manifest.json + module.apk
 $ANDROID_SDK/build-tools/36.0.0/apksigner.bat verify --print-certs \
   apk-build/module.apk | head -3                      # the certificate digest
 ```

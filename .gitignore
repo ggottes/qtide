@@ -2,6 +2,7 @@
 /out-classes/
 /dex/
 /apk-build/
+/work/
 /build/
 /.gradle/
 /.kotlin/

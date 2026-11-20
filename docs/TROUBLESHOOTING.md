@@ -3,8 +3,8 @@
 | what you see | why | what to do |
 | --- | --- | --- |
 | *"This module's code didn't start. It may be made for a different version of Mochy."* | the apk is missing `ModuleSide`, or was built for another api version | take a zip built from this repo's current sources; both `-debug` and release zips carry the bridge |
-| *"It has to be signed with the same key as your Mochy."* | wrong key for your build | debug Mochy → `qtide-debug.mochyymodule.zip`; release Mochy → `qtide.mochyymodule.zip` |
-| *"That file isn't a module."* | the zip has no `manifest.json` at its root | take the built zip, not the sources |
+| *"It has to be signed with the same key as your Mochy."* | wrong key for your build | debug Mochy → `qtide-<service>-debug.mochyymodule.zip`; release Mochy → `qtide-<service>.mochyymodule.zip` |
+| *"That file isn't a module."* | the zip of the service you want has no `manifest.json` at its root | take the built zip, not the sources |
 | Account step red | the token is wrong or expired | paste it again; Tidal's refresh token rotates, take a fresh one |
 | *Find the song* red | the recording isn't on that service in your country | check the spelling, or turn on another service |
 | *Stream* red | the service refused the stream (licence, region, free account) | Deezer needs HiFi for FLAC and falls back to its 30 s preview otherwise; Qobuz needs a Studio account for 24-bit |

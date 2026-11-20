@@ -1,7 +1,7 @@
 # The zip, field by field
 
 ```
-qtide.mochyymodule.zip
+qtide-tidal.mochyymodule.zip      (one zip per service: tidal, qobuz, deezer)
 ├── manifest.json
 └── module.apk
 ```
@@ -10,8 +10,8 @@ qtide.mochyymodule.zip
 
 | field | value here | what mochy does with it |
 | --- | --- | --- |
-| `id` | `qtide` | stable forever; an update reuses it |
-| `name` | `Qtide` | the row and the page |
+| `id` | `qtide-tidal`, `qtide-qobuz` or `qtide-deezer` | stable forever; an update reuses it |
+| `name` | `Qtide — Tidal` / `— Qobuz` / `— Deezer` | the row and the page |
 | `version` | `1.0` | shown, and on the update button |
 | `description` | one line | under the name |
 | `author` | `geisselgottes` | under module info |
@@ -37,8 +37,8 @@ only sees android, java and the bridge's `shared` package, and calls the module 
 
 | file name | picked |
 | --- | --- |
-| `qtide.mochyymodule.zip` | yes (release builds) |
-| `qtide-debug.mochyymodule.zip` | yes (debug builds) |
+| `qtide-tidal.mochyymodule.zip` (or `-qobuz-`, `-deezer-`) | yes (release builds) |
+| `qtide-tidal-debug.mochyymodule.zip` (or `-qobuz-`, `-deezer-`) | yes (debug builds) |
 | `qtide.zip` | no — the name must contain `mochyymodule` |
 
 Both may sit on the same release; mochy takes the `debug` one on a debug build and the other on a

@@ -1,42 +1,45 @@
 # Qtide — Qobuz, Tidal and Deezer in Mochy
 
-A [Mochy](https://realidkroo.github.io/Mochy-Music/wiki/) module that plays songs from your own
-accounts. One module, three catalogues, each with its own token on the module's page.
+Three [Mochy](https://realidkroo.github.io/Mochy-Music/wiki/) modules that play songs from your own
+accounts. Each service is its own zip with its own switch and its own token, so you take only the
+ones you need.
 
-| service | what you need | what you get |
-| --- | --- | --- |
-| **Tidal** | a refresh token | FLAC 16/44.1 and, where the master allows, **hi-res up to 24-bit** (as DASH) |
-| **Qobuz** | a user token (`X-User-Auth-Token`) | FLAC 16/44.1, up to 24-bit on Studio accounts |
-| **Deezer** | the `arl` cookie | **FLAC** on a HiFi account, MP3 320 otherwise — the file is decrypted in the module |
+| zip | module | what you need | what you get |
+| --- | --- | --- | --- |
+| `qtide-tidal.mochyymodule.zip` | **Qtide — Tidal** | a refresh token | FLAC 16/44.1 and, where the master allows, **hi-res up to 24-bit** (as DASH) |
+| `qtide-qobuz.mochyymodule.zip` | **Qtide — Qobuz** | a user token (`X-User-Auth-Token`) | FLAC 16/44.1, up to 24-bit on Studio accounts |
+| `qtide-deezer.mochyymodule.zip` | **Qtide — Deezer** | the `arl` cookie | **FLAC** on a HiFi account, MP3 320 otherwise — the file is decrypted in the module |
 
-Songs are asked for in the order **Tidal → Qobuz → Deezer**; the first one that has the recording
-wins. Quality is a chip on the module's page: Hi-Res, Lossless or High.
+Install any combination. Mochy asks players in the order you drag them on the modules page, so put
+whichever you trust first; a module below YouTube Music is only asked after YouTube has nothing.
+Quality is a chip on each module's page.
 
 > This is a third-party module. It is not made or supported by Mochy's author.
 
 ## Install
 
-1. Take `qtide.mochyymodule.zip` (a built one is attached to the newest release).
+1. Take the zips you want from the newest release (`…-debug.mochyymodule.zip` for a debug Mochy).
 2. Send it to the phone.
 3. Mochy → settings → modules → **add a module** → **add from a file** → pick the zip → **add**.
-4. Open **Qtide**'s page, fill in the tokens you have, and turn **enable** on.
-5. On the modules page, drag Qtide above YouTube Music so it is asked first.
+4. Open each module's page, paste its token, and turn **enable** on.
+5. On the modules page, drag them above YouTube Music so they are asked first.
 
 A debug build of Mochy only accepts a zip signed with the **debug** key, a release build one signed
-with the **release** key. Take the zip that matches your app: `qtide-debug.mochyymodule.zip` or
-`qtide.mochyymodule.zip`.
+with the **release** key. Take the zips that match your app: `qtide-<service>-debug.mochyymodule.zip`
+or `qtide-<service>.mochyymodule.zip`.
 
 ## Tokens
+
+Each module has one field:
 
 | field | where it comes from |
 | --- | --- |
 | **Tidal refresh token** | sign in at tidal.com, or reuse one from streamrip/tiddl. The module renews its access token itself. |
 | **Qobuz user token** | the Qobuz web player → developer tools → Network → any request's `X-User-Auth-Token` header. |
-| **Qobuz app id and secret** (optional) | `appId:secret` if you have your own pair; left empty they are read from Qobuz's player script. |
+| **Qobuz app id and secret** (optional, Qobuz module) | `appId:secret` if you have your own pair; left empty they are read from Qobuz's player script. |
 | **Deezer ARL** | deezer.com → developer tools → Application → Cookies → `arl`. |
 
-Leave a field empty to skip that service. Tokens live on the phone only, in the module's own
-storage; nothing is sent anywhere else.
+Tokens live on the phone only, in that module's own storage; nothing is sent anywhere else.
 
 ## How a song is played
 
@@ -53,9 +56,9 @@ play → search the services in order (first artist + title, matched by recordin
 ### The quick way (no Gradle daemon)
 
 ```sh
-./build.sh              # -> build/qtide-debug.mochyymodule.zip  (debug key)
+./build.sh              # -> build/qtide-<service>-debug.mochyymodule.zip (debug key)
 RELEASE=1 KEYSTORE=… KS_PASS=… KEY_ALIAS=… ./build.sh
-                        # -> build/qtide.mochyymodule.zip         (your release key)
+                        # -> build/qtide-<service>.mochyymodule.zip        (your release key)
 ```
 
 `build.sh` compiles with the Kotlin compiler, dexes with `d8`, packs with `aapt2`, signs with
@@ -73,17 +76,21 @@ the apk is a thin shell around the jar's classes, and `build.sh` makes that shel
 ```
 api/                      mochy's own module api + bridge, copied in (see api/README.md)
 module/src/com/qtide/
-├── QtideModule.kt        the module: sources, quality, the flow Mochy calls
-├── Tidal.kt              session, search, stream (links + hi-res DASH)
+├── QtideTidal.kt         the Tidal module: its token field, its quality chips
+├── QtideQobuz.kt         the Qobuz module
+├── QtideDeezer.kt        the Deezer module
+├── Sources.kt            the song flow they share: search, match, open, hand over
+├── Tidal.kt              session, search, stream (link + hi-res DASH)
 ├── Qobuz.kt              session (app pair scraped or given), search, signed stream
 ├── Deezer.kt             ARL session, search, licence stream
-└── Json.kt               a small json reader/writer: the module carries no dependencies but kotlin
-tools/
-├── AndroidManifest.xml   the apk's shell: the entry class mochy reads
-└── tokens.md             your own test tokens (git-ignored)
-module/manifest.json      what mochy shows about the module
-build.sh, toolchain.sh    the build
+├── Blowfish.kt           Deezer's striped files are decrypted with this
+└── Json.kt               a small json reader/writer: no dependencies but kotlin
+tools/AndroidManifest.xml  the apk's shell; build.sh swaps the entry class into it
+build.sh, toolchain.sh     one zip per service
 ```
+
+Each zip carries the same classes and differs only in the entry class its manifest names, so a
+fix to the shared code reaches all three at once.
 
 ## Limits
 

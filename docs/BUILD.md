@@ -1,9 +1,9 @@
-# Building the zip
+# Building the zip of the service you want
 
 A mochy zip module is two files:
 
 ```
-qtide.mochyymodule.zip
+qtide-<service>.mochyymodule.zip
 ├── manifest.json     what mochy reads first: id, name, resources, code
 └── module.apk        the module's own code, signed with mochy's key
 ```
@@ -34,16 +34,16 @@ sessions do not allow).
 | `d8`, `aapt2`, `zipalign`, `apksigner` | Android SDK build-tools | `ANDROID_SDK` (default `/c/Android/Sdk`) |
 | `android.jar` | `platforms/android-36` | `toolchain.sh` |
 | a key | debug keystore at `~/.android/debug.keystore` | `RELEASE=1 KEYSTORE=… KS_PASS=… KEY_ALIAS=…` |
-| Python 3 | to add the dex to the apk and write the zip | — |
+| Python 3 | to add the dex to the apk and write the zip of the service you want | — |
 
 ## Debug and release
 
 ```sh
 ./build.sh
-# built build/qtide-debug.mochyymodule.zip (debug key)
+# built build/qtide-<service>-debug.mochyymodule.zip (debug key)
 
 RELEASE=1 KEYSTORE=$HOME/keys/qtide.jks KS_PASS=secret KEY_ALIAS=qtide ./build.sh
-# built build/qtide.mochyymodule.zip (release key)
+# built build/qtide-<service>.mochyymodule.zip (release key)
 ```
 
 Name them **`…-debug.mochyymodule.zip`** and **`…mochyymodule.zip`**: mochy looks for `mochyymodule`
@@ -53,7 +53,7 @@ build.
 ## Publish so people get updates
 
 ```sh
-gh release create v1.0 build/qtide.mochyymodule.zip --title "Qtide 1.0"
+gh release create v1.0 build/qtide-<service>.mochyymodule.zip --title "Qtide 1.0"
 ```
 
 Keep `manifest.json`'s `id` the same forever; bump `version` on every release. People who added the
