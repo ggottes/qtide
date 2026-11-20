@@ -4,12 +4,14 @@ import com.mochyy.mochymusic.module.AccountState
 import com.mochyy.mochymusic.module.DiagnosticStep
 import com.mochyy.mochymusic.module.FieldKind
 import com.mochyy.mochymusic.module.MatchedTrack
+import com.mochyy.mochymusic.module.ModuleArt
 import com.mochyy.mochymusic.module.ModuleChoice
 import com.mochyy.mochymusic.module.ModuleField
 import com.mochyy.mochymusic.module.ModuleFields
 import com.mochyy.mochymusic.module.ModuleHost
 import com.mochyy.mochymusic.module.ModuleInfo
 import com.mochyy.mochymusic.module.ResolveResult
+import com.mochyy.mochymusic.module.SignInSpec
 import com.mochyy.mochymusic.module.SourceModule
 import com.mochyy.mochymusic.module.SourceStream
 import com.mochyy.mochymusic.module.StreamOption
@@ -18,24 +20,51 @@ import com.mochyy.mochymusic.module.TrackQuery
 /**
  * Qobuz in Mochy, on your own account.
  *
- * A user token is all it needs: the app id and secret Qobuz's own web player signs with are read
- * from its script, or typed in when someone has their own pair.
+ * Signing in happens on play.qobuz.com in Mochy's own browser, which hands the module the same
+ * `X-User-Auth-Token` header the web player sends; pasting that token works too. The app id and
+ * secret Qobuz's own player signs with are read from its script.
+ *
+ * Hi-Res asks for 24/192, then 24/96, then CD, and the label names the bit depth Qobuz actually
+ * gave, so a 16/44.1 master under the Hi-Res chip reads as 16-bit rather than pretending.
  */
-class QtideQobuz : SourceModule, ModuleFields {
+class QtideQobuz : SourceModule, ModuleFields, ModuleArt {
 
     override val info = ModuleInfo(
         id = "qtide-qobuz",
         name = "Qtide — Qobuz",
-        version = "1.2",
+        version = "1.3",
         description = "Qobuz: your own account, FLAC up to 24-bit on a Studio plan",
+        sourceUrl = "https://github.com/ggottes/qtide",
         author = "geisselgottes",
     )
 
     private lateinit var host: ModuleHost
+    private var art: Art? = null
 
     override fun attach(host: ModuleHost) {
         this.host = host
+        art = Art(host)
     }
+
+    override val icon: String? get() = art?.of("qtide-icon.png")
+    override val banner: String? get() = art?.of("qtide-banner.png")
+
+    // the web player refuses to render under 1024px wide, so the sign-in page has to be the desktop one
+    override val signIn = SignInSpec(
+        startUrl = "https://play.qobuz.com/login",
+        origins = listOf(
+            "https://play.qobuz.com",
+            "https://www.qobuz.com",
+            "https://accounts.qobuz.com",
+            "https://www.google.com",
+            "https://accounts.google.com",
+            "https://www.facebook.com",
+        ),
+        sessionOrigins = setOf("https://www.qobuz.com"),
+        desktopSite = true,
+        title = "Sign in to Qobuz",
+        subtitle = "Your Studio account plays in Mochy",
+    )
 
     override val fields = listOf(
         ModuleField(
@@ -43,7 +72,7 @@ class QtideQobuz : SourceModule, ModuleFields {
             label = "Qobuz user token",
             kind = FieldKind.Text,
             hint = "The X-User-Auth-Token header of the Qobuz web player",
-            description = "Kept on this phone only.",
+            description = "Sign in above and this fills itself, or paste the token here.",
         ),
         ModuleField(
             id = "appPair",
@@ -55,16 +84,20 @@ class QtideQobuz : SourceModule, ModuleFields {
     )
 
     override fun onFields(values: Map<String, String>) {
-        host.storage.set("userToken", values["userToken"]?.trim()?.ifEmpty { null })
-        host.storage.set("appPair", values["appPair"]?.trim()?.ifEmpty { null })
+        values["userToken"]?.trim()?.takeIf { it.isNotEmpty() }?.let { host.storage.set("userToken", it) }
+        values["appPair"]?.trim()?.takeIf { it.isNotEmpty() }?.let { host.storage.set("appPair", it) }
     }
+
+    /** the browser's own header: the same slot the field writes, so the page shows what it found */
+    override fun onSignInHeader(name: String, value: String, url: String): Boolean =
+        SignIn.qobuz(host, name, value)
 
     override val choices = listOf(
         ModuleChoice(
             id = "quality",
             label = "Stream",
             options = listOf(
-                StreamOption("hires", "Hi-Res", "Up to 24-bit, on a Studio plan"),
+                StreamOption("hires", "Hi-Res", "Up to 24-bit on a Studio plan; CD where the track has no master"),
                 StreamOption("lossless", "Lossless", "CD quality FLAC, 16-bit 44.1 kHz"),
             ),
         ),
@@ -74,6 +107,30 @@ class QtideQobuz : SourceModule, ModuleFields {
 
     override fun accountState(): AccountState =
         if (token().isNullOrBlank()) AccountState.SignedOut else AccountState.SignedIn("Qobuz")
+
+    override suspend fun verifyAccount(): AccountState {
+        val token = token()
+        if (token.isNullOrBlank()) return AccountState.SignedOut
+        val session = session()
+            ?: return AccountState.Expired("Qobuz refused the saved sign-in")
+        return AccountState.SignedIn("Qobuz · ${session.country}")
+    }
+
+    private var signedIn: Qobuz.Session? = null
+
+    private fun session(): Qobuz.Session? {
+        signedIn?.let { return it }
+        val token = token() ?: return null
+        val pair = host.storage.get("appPair").orEmpty().split(":", limit = 2)
+        return Qobuz.login(host, token, pair.getOrNull(0).orEmpty(), pair.getOrNull(1).orEmpty())
+            ?.also { signedIn = it }
+    }
+
+    override fun signOut() {
+        host.storage.set("userToken", null)
+        host.storage.set("appPair", null)
+        signedIn = null
+    }
 
     override suspend fun resolve(track: TrackQuery, picks: Map<String, String>): ResolveResult =
         diagnose(track, picks) {}

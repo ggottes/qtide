@@ -14,15 +14,45 @@ import com.mochyy.mochymusic.module.TrackQuery
 internal sealed interface Source {
     val label: String
 
+    /** why the last [stream] came back empty, in the service's own words; blank when it just failed */
+    val reason: String get() = ""
+
+    /** true when [reason] is about having no usable account, so the app is told "signed out" */
+    fun signedOut(): Boolean = false
+
     suspend fun search(host: ModuleHost, track: TrackQuery): TrackMatcher.Scored?
     suspend fun stream(host: ModuleHost, id: String, quality: String): Handoff?
 
-    class Tidal(private val refresh: String) : Source {
+    /**
+     * [refresh] may be blank: a module signed out that way is still signed in by a pending device
+     * login, whose approval the user has just finished at link.tidal.com.
+     */
+    class Tidal(private val refresh: String, private val signedInByDevice: (String) -> Unit = {}) : Source {
         override val label = "Tidal"
         private var signedIn: com.qtide.Tidal.Session? = null
+        private var problem = ""
 
-        private suspend fun open(host: ModuleHost): com.qtide.Tidal.Session? =
-            signedIn ?: com.qtide.Tidal.login(host, refresh)?.also { signedIn = it }
+        override val reason: String get() = problem
+
+        /** true when [reason] is about having no account, not about the catalogue */
+        override fun signedOut(): Boolean = refresh.isBlank() && signedIn == null
+
+        private fun open(host: ModuleHost): com.qtide.Tidal.Session? {
+            signedIn?.let { return it }
+            val token = refresh.ifBlank {
+                com.qtide.Tidal.pollDevice(host)?.also(signedInByDevice).orEmpty()
+            }
+            if (token.isBlank()) {
+                val code = com.qtide.Tidal.beginDevice(host)
+                problem = if (code != null) {
+                    "Not signed in — open link.tidal.com and approve code $code, then play again"
+                } else {
+                    "Not signed in, and Tidal wouldn't hand out a sign-in code"
+                }
+                return null
+            }
+            return com.qtide.Tidal.login(host, token)?.also { signedIn = it }
+        }
 
         override suspend fun search(host: ModuleHost, track: TrackQuery): TrackMatcher.Scored? {
             val session = open(host) ?: return null
@@ -61,6 +91,12 @@ internal sealed interface Source {
 
     class Deezer(private val arl: String) : Source {
         override val label = "Deezer"
+
+        override val reason: String get() = com.qtide.Deezer.lastReason
+
+        /** true when the ARL itself was turned down, rather than the track */
+        override fun signedOut(): Boolean =
+            com.qtide.Deezer.lastReason.contains("ARL") || com.qtide.Deezer.lastReason.contains("licence token")
 
         override suspend fun search(host: ModuleHost, track: TrackQuery): TrackMatcher.Scored? {
             val query = "${track.artists.firstOrNull().orEmpty()} ${TrackMatcher.core(track.title)}".trim()
@@ -118,7 +154,8 @@ internal class SourceRunner(
             return null
         }
         if (best == null) {
-            lastProblem = "No matching recording of “${track.title}” on ${source.label}"
+            // a service that couldn't even open a session says so, instead of reading like a miss
+            lastProblem = source.reason.ifBlank { "No matching recording of “${track.title}” on ${source.label}" }
             report(Step("Find the song", false, lastProblem))
             return null
         }
@@ -133,7 +170,7 @@ internal class SourceRunner(
             return null
         }
         if (stream == null) {
-            lastProblem = "${source.label} gave no stream"
+            lastProblem = source.reason.ifBlank { "${source.label} gave no stream" }
             report(Step("Stream", false, lastProblem))
             return null
         }

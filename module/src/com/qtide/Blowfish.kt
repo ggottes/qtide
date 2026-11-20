@@ -269,13 +269,14 @@ internal object Blowfish {
      */
     fun decryptStripe(data: ByteArray, key: ByteArray): ByteArray {
         val schedule = Schedule(key)
-        // Deezer's CBC starts from 0x0001020304050607, not from zeros; with a zero IV every block
-        // comes out one bit off and the file opens as noise
-        var l = 0x00010203
-        var r = 0x04050607
         var off = 0
         while (off < data.size) {
             if (data.size - off >= 2048) {
+                // every slice is a CBC of its own: the IV starts over at 0x0001020304050607 for each
+                // encrypted 2048-byte chunk. carrying it on from the slice before makes every chunk
+                // after the first come out as noise.
+                var l = 0x00010203
+                var r = 0x04050607
                 var block = off
                 val end = block + 2048
                 while (block < end) {

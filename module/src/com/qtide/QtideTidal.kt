@@ -4,54 +4,76 @@ import com.mochyy.mochymusic.module.AccountState
 import com.mochyy.mochymusic.module.DiagnosticStep
 import com.mochyy.mochymusic.module.FieldKind
 import com.mochyy.mochymusic.module.MatchedTrack
+import com.mochyy.mochymusic.module.ModuleArt
 import com.mochyy.mochymusic.module.ModuleChoice
 import com.mochyy.mochymusic.module.ModuleField
 import com.mochyy.mochymusic.module.ModuleFields
 import com.mochyy.mochymusic.module.ModuleHost
 import com.mochyy.mochymusic.module.ModuleInfo
 import com.mochyy.mochymusic.module.ResolveResult
+import com.mochyy.mochymusic.module.SignInSpec
 import com.mochyy.mochymusic.module.SourceModule
 import com.mochyy.mochymusic.module.SourceStream
 import com.mochyy.mochymusic.module.StreamOption
 import com.mochyy.mochymusic.module.TrackQuery
-import java.io.File
 
 /**
  * Tidal in Mochy, on your own account.
  *
- * The refresh token is typed on the module's page; the module signs in with it, finds the recording
- * by title and artist, and hands over a stream. CD is one FLAC link; hi-res is a DASH manifest that
- * goes over as a `data:` uri, so the player fetches its segments itself.
+ * Sign in opens link.tidal.com in Mochy's own browser; the first play asks Tidal for a device code
+ * and shows it in the step line, and the play after the approval finishes the sign-in. A refresh
+ * token can also be typed instead.
+ *
+ * The module finds the recording by title and artist and hands over a stream. CD is one FLAC link;
+ * hi-res is a DASH manifest that goes over as a `data:` uri, so the player fetches its segments
+ * itself. A chip is a ceiling: Hi-Res falls to CD and High falls to AAC 96 when Tidal has no master
+ * for the track, and the label always names what actually answered.
  */
-class QtideTidal : SourceModule, ModuleFields {
+class QtideTidal : SourceModule, ModuleFields, ModuleArt {
 
     override val info = ModuleInfo(
         id = "qtide-tidal",
         name = "Qtide — Tidal",
-        version = "1.2",
+        version = "1.3",
         description = "Tidal: your own account, lossless and hi-res where it has it",
+        sourceUrl = "https://github.com/ggottes/qtide",
         author = "geisselgottes",
     )
 
     private lateinit var host: ModuleHost
     private var runner: SourceRunner? = null
+    private var art: Art? = null
 
     override fun attach(host: ModuleHost) {
         this.host = host
+        art = Art(host)
     }
+
+    override val icon: String? get() = art?.of("qtide-icon.png")
+    override val banner: String? get() = art?.of("qtide-banner.png")
+
+    override val signIn = SignInSpec(
+        startUrl = "https://link.tidal.com/",
+        origins = listOf("https://link.tidal.com", "https://tidal.com", "https://login.tidal.com"),
+        sessionOrigins = setOf("https://link.tidal.com"),
+        desktopSite = false,
+        title = "Sign in to Tidal",
+        subtitle = "Log in, then approve the code Qtide shows when you press play",
+    )
 
     override val fields = listOf(
         ModuleField(
             id = "refreshToken",
             label = "Tidal refresh token",
             kind = FieldKind.Text,
-            hint = "The refresh token of a Tidal session",
-            description = "Kept on this phone only.",
+            hint = "Optional: a session's refresh token",
+            description = "Sign in above, or paste a refresh token here.",
         ),
     )
 
     override fun onFields(values: Map<String, String>) {
-        host.storage.set("refreshToken", values["refreshToken"]?.trim()?.ifEmpty { null })
+        // a blank box means "nothing typed", not "forget what the browser found"
+        values["refreshToken"]?.trim()?.takeIf { it.isNotEmpty() }?.let { host.storage.set("refreshToken", it) }
         runner = null
     }
 
@@ -60,7 +82,7 @@ class QtideTidal : SourceModule, ModuleFields {
             id = "quality",
             label = "Stream",
             options = listOf(
-                StreamOption("hires", "Hi-Res", "Up to 24-bit, where Tidal has a hi-res master"),
+                StreamOption("hires", "Hi-Res", "Up to 24-bit where Tidal has a master; CD where it doesn't"),
                 StreamOption("lossless", "Lossless", "CD quality FLAC, 16-bit 44.1 kHz"),
                 StreamOption("high", "High", "AAC 320, for a slow connection"),
             ),
@@ -72,6 +94,25 @@ class QtideTidal : SourceModule, ModuleFields {
     override fun accountState(): AccountState =
         if (token().isNullOrBlank()) AccountState.SignedOut else AccountState.SignedIn("Tidal")
 
+    /**
+     * Finishes a device login the user approved at link.tidal.com: one poll stores the refresh
+     * token, which is the same slot the field writes.
+     */
+    override suspend fun verifyAccount(): AccountState {
+        Tidal.pollDevice(host)?.let { host.storage.set("refreshToken", it) }
+        val token = token()
+        if (token.isNullOrBlank()) return AccountState.SignedOut
+        val session = Tidal.login(host, token)
+            ?: return AccountState.Expired("Tidal refused the saved sign-in")
+        return AccountState.SignedIn("Tidal · ${session.country}")
+    }
+
+    override fun signOut() {
+        host.storage.set("refreshToken", null)
+        Tidal.forget(host)
+        runner = null
+    }
+
     override suspend fun resolve(track: TrackQuery, picks: Map<String, String>): ResolveResult =
         diagnose(track, picks) {}
 
@@ -80,16 +121,15 @@ class QtideTidal : SourceModule, ModuleFields {
         picks: Map<String, String>,
         report: (DiagnosticStep) -> Unit,
     ): ResolveResult {
-        val token = token()
-        if (token.isNullOrBlank()) {
-            report(DiagnosticStep("Account", false, "No refresh token on the module yet"))
-            return ResolveResult.Unavailable("Not signed in")
-        }
-
-        val source = SourceRunner(host, Source.Tidal(token), host::folder)
+        val tidal = Source.Tidal(token().orEmpty()) { host.storage.set("refreshToken", it) }
+        val source = SourceRunner(host, tidal, host::folder)
         val found = source.find(track, picks["quality"] ?: "lossless") { step ->
             report(DiagnosticStep(step.name, step.ok, step.detail))
-        } ?: return ResolveResult.NotFound(source.problem())
+        } ?: return if (tidal.signedOut()) {
+            ResolveResult.Unavailable(source.problem())
+        } else {
+            ResolveResult.NotFound(source.problem())
+        }
 
         val stream = found.stream
         return ResolveResult.Found(

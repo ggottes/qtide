@@ -23,11 +23,15 @@ good now.
 ## What the module implements
 
 ```kotlin
-class QtideModule : SourceModule, ModuleFields {
-    override val info: ModuleInfo            // id, name, version, author
-    override val fields: List<ModuleField>   // the four token fields on its page
-    override fun onFields(values: Map<String,String>)   // called whenever a field changes
+class QtideModule : SourceModule, ModuleFields, ModuleArt {
+    override val info: ModuleInfo            // id, name, version, author, source url
+    override val signIn: SignInSpec?         // the service's page, opened in mochy's own browser
+    override fun onSignInHeader(name, value, url): Boolean   // true once the session is in
+    override val fields: List<ModuleField>   // the token fields on its page, kept as a fallback
+    override fun onFields(values: Map<String,String>)        // called whenever a field changes
     override val choices: List<ModuleChoice> // the quality chips
+    override val icon: String?               // written into host.folder, answered as an absolute path
+    override val banner: String?             // the same
     override suspend fun resolve(track, picks): ResolveResult
     override suspend fun diagnose(track, picks, report)  // resolve, step by step, for the test button
 }
@@ -47,9 +51,14 @@ Nothing is downloaded by mochy: the url is handed to its player, and **the playe
 
 | | sign-in | search | stream |
 | --- | --- | --- | --- |
-| Tidal | refresh token → access token (two client pairs, one per tier) | `api.tidal.com/v1/search/tracks` | CD: one FLAC link · hi-res: DASH manifest as a `data:` uri |
-| Qobuz | user token, app pair scraped from `play.qobuz.com` | `track/search` | `track/getFileUrl` with an md5 signature: one FLAC link |
-| Deezer | `arl` cookie → `checkForm` + licence token (needs the site's own cookies first) | `api.deezer.com/search` | licence → `media.deezer.com/v1/get_url`, then the striped file is decrypted with Blowfish (`Blowfish.kt`) and saved; the free preview is only the last resort |
+| Tidal | device login approved at `link.tidal.com`, or a pasted refresh token; two client pairs, one per tier | `api.tidal.com/v1/search/tracks` | CD: one FLAC link · hi-res: DASH manifest as a `data:` uri · High/Low: one M4A link |
+| Qobuz | `play.qobuz.com` in mochy's browser sends `X-User-Auth-Token`, or the token is pasted; app pair scraped from the player | `track/search` | `track/getFileUrl` with an md5 signature: one FLAC link |
+| Deezer | `arl` copied from deezer.com (an HttpOnly cookie no browser hands over) → `checkForm` + licence token | `api.deezer.com/search` | licence → `media.deezer.com/v1/get_url`, then the striped file is decrypted with Blowfish (`Blowfish.kt`) and saved; a preview is never played |
+
+Each quality chip is a ceiling with a floor: Hi-Res asks for the top tier and falls to CD (Tidal
+`HI_RES_LOSSLESS` → `LOSSLESS`, Qobuz 27 → 7 → 6), High asks for `HIGH` and falls to `LOW`, and the
+label always names the tier that answered. The ladders live in `Ladder.kt` and in each service's
+`RUNGS` table.
 
 Deezer strips its files: every 6144 bytes, the first 2048 are Blowfish-CBC under a key built from
 the track id (`md5(id)`, halves xored with `g4el58wc0zvf9na1`), starting from IV `0001020304050607`.

@@ -18,6 +18,14 @@ internal object Qobuz {
 
     private const val API = "https://www.qobuz.com/api.json/0.2"
 
+    // Qobuz's own format ids: 27 is up to 24/192, 7 is 24/44.1-96, 6 is CD. A Studio master asked
+    // for at 27 can come back at 7 (Qobuz negotiates down), and a track with no hi-res at all is
+    // refused rather than downgraded, so the ladder does the stepping.
+    private val RUNGS = mapOf(
+        "hires" to listOf("27", "7", "6"),
+        "lossless" to listOf("6"),
+    )
+
     class Session(val userToken: String, val appId: String, val secrets: List<String>, val country: String)
 
     class Found(val url: String, val label: String, val codec: String, val sampleRate: Int)
@@ -96,31 +104,37 @@ internal object Qobuz {
 
     // ---- stream ---------------------------------------------------------------------------
 
-    /** quality: "lossless" (16/44.1) or "hires" (up to 24/192) */
+    /** quality: "lossless" (16/44.1) or "hires" (up to 24/192, falling back to 24/96 and then CD) */
     fun stream(host: ModuleHost, session: Session, trackId: String, quality: String): Found? {
-        val format = if (quality == "hires") 27 else 6
-        val ts = System.currentTimeMillis() / 1000
-        val signed = "trackgetFileUrlformat_id${format}intentstreamtrack_id$trackId$ts"
-
-        for (secret in session.secrets) {
-            val sig = md5(signed + secret)
-            val body = call(
-                host, "track/getFileUrl",
-                mapOf(
-                    "request_ts" to "$ts",
-                    "request_sig" to sig,
-                    "track_id" to trackId,
-                    "format_id" to "$format",
-                    "intent" to "stream",
-                ),
-                session.userToken,
-            ) ?: continue
-            val url = Json.text(body, "url") ?: continue
-            val bits = Json.long(body, "bit_depth")?.toInt() ?: if (format == 6) 16 else 24
-            val rate = Json.long(body, "sampling_rate")?.toInt() ?: if (format == 6) 44100 else 96000
-            return Found(url, "${rate / 1000} kHz · FLAC", "FLAC", rate)
+        // the tier is the outer loop: a secret that signs 27 badly would otherwise cost the account
+        // its CD copy too, because the ladder never gets a second secret at the same tier
+        for (format in Ladder.steps(quality, RUNGS)) {
+            for (secret in session.secrets) {
+                one(host, session, secret, trackId, format.toInt())?.let { return it }
+            }
         }
         return null
+    }
+
+    private fun one(host: ModuleHost, session: Session, secret: String, trackId: String, format: Int): Found? {
+        val ts = System.currentTimeMillis() / 1000
+        val signed = "trackgetFileUrlformat_id${format}intentstreamtrack_id$trackId$ts"
+        val sig = md5(signed + secret)
+        val body = call(
+            host, "track/getFileUrl",
+            mapOf(
+                "request_ts" to "$ts",
+                "request_sig" to sig,
+                "track_id" to trackId,
+                "format_id" to "$format",
+                "intent" to "stream",
+            ),
+            session.userToken,
+        ) ?: return null
+        val url = Json.text(body, "url") ?: return null
+        val bits = Json.long(body, "bit_depth")?.toInt() ?: if (format == 6) 16 else 24
+        val rate = Json.long(body, "sampling_rate")?.toInt() ?: if (format == 6) 44100 else 96000
+        return Found(url, "$bits-bit · ${rate / 1000} kHz · FLAC", "FLAC", rate)
     }
 
     // ---- plumbing -------------------------------------------------------------------------

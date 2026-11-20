@@ -8,27 +8,50 @@ import java.net.URLEncoder
 import java.util.Base64
 
 /**
- * Tidal: a session from a refresh token, a search, and the one stream the player can open.
+ * Tidal: a session from a refresh token (or a device login), a search, and the one stream the
+ * player can open.
  *
  * Two client pairs, because Tidal hands out different tiers by client: the hi-res pair is asked for
  * the top tier, the other gives CD. Both are the public pairs every downloader uses; they name an
  * app, never an account. Measured against a real account on 2026-11-20.
+ *
+ * A chip is a ceiling, not a demand: Hi-Res asks for `HI_RES_LOSSLESS` and falls to `LOSSLESS`, and
+ * High asks for `HIGH` and falls to `LOW`, so a track Tidal has no master for still plays instead of
+ * failing. The label always names the tier that actually answered.
  */
 internal object Tidal {
 
     private const val HIRES_ID = "fX2JxdmntZWK0ixT"
     private const val HIRES_SECRET = "1Nm5AfDAjxrgJFJbKNWLeAyKGVGmINuXPPLHVXAavxAg="
-    // the dash manifest's own shapes. kotlin raw strings keep every backslash, and java's regex
-    // reads \u0022 as a quote, so none of these needs escaping inside the source.
-    private const val ATTRIBUTE_RATE = """audioSamplingRate=\u0022(\d+)\u0022"""
-    private const val ATTRIBUTE_INIT = """initialization=\u0022([^\u0022]+)\u0022"""
-    private const val ATTRIBUTE_MEDIA = """media=\u0022([^\u0022]+)\u0022"""
-    private const val SEGMENT_TIMELINE = """<S d=\u0022\d+\u0022(?: r=\u0022(\d+)\u0022)?"""
+    // the dash manifest's own shapes: an attribute's value sits in double quotes
+    private const val ATTRIBUTE_RATE = "audioSamplingRate=\"(\\d+)\""
+    private const val ATTRIBUTE_INIT = "initialization=\"([^\"]+)\""
+    private const val ATTRIBUTE_MEDIA = "media=\"([^\"]+)\""
+    private const val SEGMENT_TIMELINE = "<S d=\"\\d+\"(?: r=\"(\\d+)\")?"
 
     private const val CD_ID = "4N3n6Q1x95LL5K7p"
     private const val CD_SECRET = "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik="
 
-    class Session(val accessToken: String, val hiresToken: String, val country: String)
+    private const val AUTH = "https://auth.tidal.com/v1/oauth2"
+    private const val DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+
+    // what a pending device login remembers, in the module's own storage
+    private const val PENDING_CODE = "deviceCode"
+    private const val PENDING_USER = "deviceUserCode"
+    private const val PENDING_UNTIL = "deviceExpiresAt"
+    private const val PENDING_TRIED = "deviceRequestedAt"
+
+    /** the steps each chip asks for, best first */
+    private val RUNGS = mapOf(
+        "hires" to listOf("HI_RES_LOSSLESS", "LOSSLESS"),
+        "lossless" to listOf("LOSSLESS"),
+        "high" to listOf("HIGH", "LOW"),
+    )
+
+    class Session(val accessToken: String, val hiresToken: String, val country: String) {
+        /** the token a step needs: the hi-res pair mints the top tier, the CD pair everything else */
+        fun tokenFor(step: String): String = if (step.startsWith("HI_RES") || step == "HIGH") hiresToken else accessToken
+    }
 
     /** either a link the player opens, or the bytes of a file the module has to save first */
     class Found(
@@ -57,20 +80,94 @@ internal object Tidal {
             "grant_type" to "refresh_token",
             "scope" to "r_usr+w_usr+w_sub",
         )
-        val basic = Base64.getEncoder().encodeToString("$id:$secret".toByteArray())
         val response = host.http(
             HttpRequest(
-                url = "https://auth.tidal.com/v1/oauth2/token",
+                url = "$AUTH/token",
                 method = "POST",
                 headers = mapOf(
-                    "authorization" to "Basic $basic",
+                    "authorization" to "Basic " + basic(id, secret),
                     "content-type" to "application/x-www-form-urlencoded",
                 ),
                 body = body.toByteArray(),
             ),
         )
         if (!response.ok) return null
-        return Json.text(Json.obj(response.text)?.let { it }, "access_token")
+        return Json.text(Json.obj(response.text), "access_token")
+    }
+
+    // ---- device login ---------------------------------------------------------------------
+
+    /**
+     * Starts a device login and returns the code to show: the user opens link.tidal.com and types
+     * it, and the next call to [pollDevice] (or a later play) picks up the refresh token.
+     *
+     * The code is remembered for its five minutes, so pressing play twice doesn't mint a second one.
+     */
+    fun beginDevice(host: ModuleHost): String? {
+        val asked = host.storage.get(PENDING_TRIED)?.toLongOrNull()
+        val until = host.storage.get(PENDING_UNTIL)?.toLongOrNull()
+        val user = host.storage.get(PENDING_USER)
+        val now = System.currentTimeMillis()
+        if (user != null && until != null && now < until) return user
+        if (asked != null && now - asked < 30_000) return user
+
+        host.storage.set(PENDING_TRIED, "$now")
+        val response = host.http(
+            HttpRequest(
+                url = "$AUTH/device_authorization",
+                method = "POST",
+                headers = mapOf("content-type" to "application/x-www-form-urlencoded"),
+                body = form("client_id" to CD_ID, "scope" to "r_usr w_usr w_sub").toByteArray(),
+            ),
+        )
+        val answer = if (response.ok) Json.obj(response.text) else null
+        val device = Json.text(answer, "deviceCode")
+        val code = Json.text(answer, "userCode")
+        if (device == null || code == null) return null
+        val ttl = (Json.long(answer, "expiresIn") ?: 300L) * 1000
+        host.storage.set(PENDING_CODE, device)
+        host.storage.set(PENDING_USER, code)
+        host.storage.set(PENDING_UNTIL, "${now + ttl}")
+        return code
+    }
+
+    /** one poll of a pending device login: the refresh token once the user approved it, null while waiting */
+    fun pollDevice(host: ModuleHost): String? {
+        val device = host.storage.get(PENDING_CODE) ?: return null
+        val until = host.storage.get(PENDING_UNTIL)?.toLongOrNull()
+        if (until != null && System.currentTimeMillis() > until) {
+            forget(host)
+            return null
+        }
+        val response = host.http(
+            HttpRequest(
+                url = "$AUTH/token",
+                method = "POST",
+                headers = mapOf(
+                    "authorization" to "Basic " + basic(CD_ID, CD_SECRET),
+                    "content-type" to "application/x-www-form-urlencoded",
+                ),
+                body = form(
+                    "client_id" to CD_ID,
+                    "device_code" to device,
+                    "grant_type" to DEVICE_GRANT,
+                    "scope" to "r_usr w_usr w_sub",
+                ).toByteArray(),
+            ),
+        )
+        if (response.ok) {
+            val refresh = Json.text(Json.obj(response.text), "refresh_token")
+            if (refresh != null) forget(host)
+            return refresh
+        }
+        // the code ran out: drop it, so the next play asks for a fresh one
+        val error = Json.text(Json.obj(response.text), "error")
+        if (error == "expired_token" || error == "access_denied") forget(host)
+        return null
+    }
+
+    fun forget(host: ModuleHost) {
+        listOf(PENDING_CODE, PENDING_USER, PENDING_UNTIL, PENDING_TRIED).forEach { host.storage.set(it, null) }
     }
 
     // ---- search ---------------------------------------------------------------------------
@@ -98,13 +195,13 @@ internal object Tidal {
 
     // ---- stream ---------------------------------------------------------------------------
 
-    fun stream(host: ModuleHost, session: Session, trackId: String, quality: String): Found? {
-        val hires = quality == "hires"
-        val token = if (hires) session.hiresToken else session.accessToken
-        val wanted = if (hires) "HI_RES_LOSSLESS" else "LOSSLESS"
-        val body = playback(host, token, trackId, wanted, session.country) ?: return null
-        val mime = Json.text(body, "manifestMimeType").orEmpty()
+    fun stream(host: ModuleHost, session: Session, trackId: String, quality: String): Found? =
+        Ladder.over(Ladder.steps(quality, RUNGS)) { step -> one(host, session, trackId, step) }?.second
+
+    private fun one(host: ModuleHost, session: Session, trackId: String, step: String): Found? {
+        val body = playback(host, session.tokenFor(step), trackId, step, session.country) ?: return null
         val manifest = Json.text(body, "manifest")?.let(::decode) ?: return null
+        val mime = Json.text(body, "manifestMimeType").orEmpty()
 
         if (mime.contains("dash") || manifest.trimStart().startsWith("<")) {
             // hi-res is a dash manifest of ~75 fmp4 segments (flac inside an mp4 container). handing
@@ -121,12 +218,14 @@ internal object Tidal {
         // a json file list: the first url is the whole file
         val parsed = Json.obj(manifest) ?: return null
         val url = Json.list(parsed, "urls")?.firstOrNull()?.let { Json.text(mapOf("u" to it), "u") } ?: return null
-        val flac = Json.text(parsed, "codecs").orEmpty().contains("flac", ignoreCase = true)
-        return if (flac) {
-            Found(url = url, label = "CD · FLAC", codec = "FLAC", sampleRate = 44100)
-        } else {
-            val granted = Json.text(body, "audioQuality").orEmpty().ifBlank { "AAC" }
-            Found(url = url, label = granted, codec = "AAC", sampleRate = 0)
+        val codecs = Json.text(parsed, "codecs").orEmpty()
+        return when {
+            codecs.contains("flac", ignoreCase = true) ->
+                Found(url = url, label = "CD · FLAC", codec = "FLAC", sampleRate = 44100)
+            // the lossy tiers are mp4 audio, not aac-in-adts: the player needs the codec named right
+            step == "HIGH" -> Found(url = url, label = "AAC 320", codec = "AAC", sampleRate = 44100)
+            step == "LOW" -> Found(url = url, label = "AAC 96", codec = "AAC", sampleRate = 44100)
+            else -> Found(url = url, label = step, codec = "AAC", sampleRate = 44100)
         }
     }
 
@@ -143,15 +242,13 @@ internal object Tidal {
         return Json.obj(response.text)
     }
 
-    private fun fetch(host: ModuleHost, url: String): ByteArray? {
-        val response = host.http(HttpRequest(url))
-        return if (response.ok) response.body else null
-    }
-
     // ---- plumbing -------------------------------------------------------------------------
 
     private fun get(host: ModuleHost, url: String, token: String) =
         host.http(HttpRequest(url, headers = mapOf("authorization" to "Bearer $token")))
+
+    private fun basic(id: String, secret: String): String =
+        Base64.getEncoder().encodeToString("$id:$secret".toByteArray())
 
     private fun decode(base64: String): String =
         String(Base64.getDecoder().decode(base64), Charsets.UTF_8)

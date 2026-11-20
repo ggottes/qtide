@@ -17,7 +17,10 @@ build_one() {
 
   work="work/$id"
   rm -rf "$work"
-  mkdir -p "$work/dex" "$work/apk/root"
+  mkdir -p "$work/dex" "$work/apk/root/assets"
+  # the module's own pictures ride in the apk's assets: the code copies them into its folder, which
+  # is where mochy reads a code module's icon and banner from
+  cp assets/qtide-icon.png assets/qtide-banner.png "$work/apk/root/assets/"
 
   # only this module's class is the entry; the three share the sources, but the manifest names one
   sed "s/com.qtide.ENTRY/$entry/" tools/AndroidManifest.xml > "$work/apk/root/AndroidManifest.xml"
@@ -28,7 +31,7 @@ build_one() {
   cp "$work/dex/classes.dex" "$work/apk/root/"
   (
     cd "$work/apk"
-    "$BT/aapt2.exe" link -o base.apk -I "$ANDROID_JAR" --manifest root/AndroidManifest.xml
+    "$BT/aapt2.exe" link -o base.apk -I "$ANDROID_JAR" --manifest root/AndroidManifest.xml -A root/assets
     python -I -c "import zipfile, shutil; shutil.copy('base.apk','unsigned.apk'); z=zipfile.ZipFile('unsigned.apk','a',zipfile.ZIP_DEFLATED); z.write('root/classes.dex','classes.dex'); z.close()"
     "$BT/zipalign.exe" -f 4 unsigned.apk aligned.apk
     if [ "$RELEASE" = "1" ] && [ -n "$KEYSTORE" ]; then
@@ -45,12 +48,16 @@ build_one() {
 import json, sys, zipfile
 apk, out, mid, name, desc, resources = sys.argv[1:7]
 manifest = {
-    "id": mid, "name": name, "version": "1.2", "author": "geisselgottes",
+    "id": mid, "name": name, "version": "1.3", "author": "geisselgottes",
     "description": desc, "resources": [r for r in resources.split(",") if r], "code": "module.apk",
+    # the pictures are also beside the manifest, the way a link module carries its own
+    "icon": "icon.png", "banner": "banner.png",
 }
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
     z.write(apk, "module.apk")
+    z.write("assets/qtide-icon.png", "icon.png")
+    z.write("assets/qtide-banner.png", "banner.png")
 PY
   echo "built build/$out"
 }
