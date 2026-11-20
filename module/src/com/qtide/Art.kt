@@ -27,12 +27,11 @@ internal class Art {
     fun of(name: String): String? = done.getOrPut(name) { copy(name) }
 
     private fun copy(name: String): String? = runCatching {
-        val apk = runCatching { javaClass.protectionDomain?.codeSource?.location?.toURI() }
-            .getOrNull()?.let { File(it) }?.takeIf { it.isFile }
-            // a device's DexClassLoader may say the folder the apk was loaded from, not the apk
-            ?: runCatching { javaClass.protectionDomain?.codeSource?.location?.toURI() }
-                .getOrNull()?.let { File(it) }?.let { if (it.isDirectory) File(it, "module.apk") else null }
-                ?.takeIf { it.isFile }
+        // a class bundled in the apk answers with the apk; a jar's class answers with the folder, so
+        // the apk is taken from the code source's own file, however android spells the path
+        val source = runCatching { javaClass.protectionDomain?.codeSource?.location?.toURI() }.getOrNull()
+            ?.let { File(it) } ?: return@runCatching null
+        val apk = (if (source.isDirectory) File(source, "module.apk") else source).takeIf { it.isFile }
             ?: return@runCatching null
         val folder = apk.parentFile ?: return@runCatching null
         val out = File(folder, name)

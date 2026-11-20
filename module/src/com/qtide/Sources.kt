@@ -4,6 +4,7 @@ import com.mochyy.mochymusic.module.ModuleHost
 import com.mochyy.mochymusic.module.StreamFormat
 import com.mochyy.mochymusic.module.TrackMatcher
 import com.mochyy.mochymusic.module.TrackQuery
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * One catalogue, with its own sign-in and its own way of handing a song over.
@@ -155,7 +156,14 @@ internal class SourceRunner(
 
     fun problem() = lastProblem
 
+    /**
+     * Mochy gives a module 12 s per song. A whole-file service stops here a little before that, so
+     * the page gets a sentence instead of the app giving up with nothing to show.
+     */
+    private val budgetMs = 10_500L
+
     suspend fun find(track: TrackQuery, quality: String, report: (Step) -> Unit): Outcome? {
+        val beganAt = System.currentTimeMillis()
         report(Step("Find the song", null, "Searching ${source.label}…"))
         val best = try {
             source.search(host, track)
@@ -175,10 +183,19 @@ internal class SourceRunner(
         report(Step("Stream", null, "Opening the stream…"))
         // never report from another thread: the bridge belongs to the coroutine that started the call
         val startedAt = System.currentTimeMillis()
+        val left = (beganAt + budgetMs - startedAt).coerceAtLeast(1L)
         val stream = try {
-            source.stream(host, best.track.id, quality)
+            withTimeoutOrNull(left) { source.stream(host, best.track.id, quality) }
         } catch (e: Exception) {
             lastProblem = "${source.label} gave no stream: ${e.message ?: e.javaClass.simpleName}"
+            report(Step("Stream", false, lastProblem))
+            return null
+        }
+        if (stream == null && System.currentTimeMillis() - beganAt >= budgetMs) {
+            // stopped here rather than by mochy, so the sentence survives to the page
+            lastProblem = "${source.label} was still working after ${budgetMs / 1000} s" +
+                (source.timings.takeIf { it.isNotBlank() }?.let { " — $it" } ?: "") +
+                ". A smaller file plays on a slow line: pick High."
             report(Step("Stream", false, lastProblem))
             return null
         }
