@@ -1,0 +1,16 @@
+# build output
+/out-classes/
+/dex/
+/apk-build/
+/build/
+/.gradle/
+/.kotlin/
+
+# tools the build borrows from this machine
+/local.properties
+
+# anything personal
+/tools/tokens.md
+*.jks
+*.keystore
+local.properties
