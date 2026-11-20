@@ -43,6 +43,10 @@ internal object Deezer {
     var lastReason = ""
         private set
 
+    /** the last thing the gateway refused with, for the page when a call comes back empty */
+    var lastRefusal = ""
+        private set
+
     /** a fresh ARL on the page: the old session was for the old cookie, so it goes */
     fun reset() {
         session = null
@@ -75,7 +79,9 @@ internal object Deezer {
         session?.let { return it }
         if (arl.isBlank()) return null
         warmUp(host)
+        lastRefusal = ""
         val user = gateway(host, arl, "deezer.getUserData", null) ?: return null
+        lastRefusal = Json.text(user, "VALID_TOKEN_REQUIRED").orEmpty()
         val token = Json.text(user, "checkForm") ?: return null
         val profile = Json.objOf(user["USER"])
         // deezer answers a rejected ARL with its anonymous user, a usable token and streaming off:
@@ -110,12 +116,19 @@ internal object Deezer {
                 body = Json.write(args ?: emptyMap<String, Any?>()).toByteArray(),
             ),
         )
-        if (!response.ok) return null
+        if (!response.ok) {
+            lastRefusal = "HTTP ${response.code}"
+            return null
+        }
         // the gateway hands out the sid its next csrf token is bound to
         takeCookies(response)
         val body = Json.obj(response.text) ?: return null
         val errors = Json.objOf(body["error"])
-        if (errors != null && errors.isNotEmpty()) return null
+        if (errors != null && errors.isNotEmpty()) {
+            // {"error":["Invalid CSRF token"], ...} is the cookie/session pairing; anything else is the request
+            lastRefusal = errors.values.joinToString("; ") { it?.toString().orEmpty() }.ifBlank { "refused" }
+            return null
+        }
         return Json.objOf(body["results"])
     }
 
@@ -157,7 +170,13 @@ internal object Deezer {
      */
     fun stream(host: ModuleHost, arl: String, trackId: String, quality: String): Found? {
         lastReason = ""
-        val open = open(host, arl) ?: return null
+        lastRefusal = ""
+        val open = open(host, arl) ?: run {
+            if (lastReason.isBlank() && lastRefusal.isNotBlank()) {
+                lastReason = "Deezer's session was refused: $lastRefusal"
+            }
+            return null
+        }
         if (!open.canStream) {
             lastReason = "this Deezer account has no streaming (Free plan)"
             return null
@@ -170,14 +189,20 @@ internal object Deezer {
         val info = gateway(host, arl, "song.getData", mapOf("SNG_ID" to trackId), open.apiToken)
         val trackToken = Json.text(info, "TRACK_TOKEN")
         if (trackToken == null) {
-            lastReason = "Deezer has no file for this track (region or rights)"
+            lastReason = "Deezer has no file for this track (region or rights)" +
+                if (lastRefusal.isNotBlank()) " — $lastRefusal" else ""
             return null
         }
 
         val steps = Ladder.steps(quality, RUNGS)
+        var qualitiesRefused = ""
         for (format in steps) {
             if (format == "FLAC" && !open.canLossless) continue
-            val url = licenceUrl(host, open.licenseToken, trackToken, format) ?: continue
+            val url = licenceUrl(host, open.licenseToken, trackToken, format)
+            if (url == null) {
+                if (lastRefusal.isNotBlank()) qualitiesRefused = lastRefusal
+                continue
+            }
             val raw = download(host, url) ?: continue
             // every /media/ and /mobile/ path is striped; decrypted in place, one buffer
             val bytes = if (url.contains("/media/") || url.contains("/mobile/")) {
@@ -190,6 +215,7 @@ internal object Deezer {
         lastReason = when {
             quality == "lossless" && !open.canLossless ->
                 "Deezer refused a full file: FLAC needs a HiFi plan, and MP3 was refused too"
+            qualitiesRefused.isNotBlank() -> "Deezer refused a full file: $qualitiesRefused"
             else -> "Deezer refused every format this chip allows"
         }
         return null
@@ -230,8 +256,17 @@ internal object Deezer {
                 body = """{"license_token":"$licenseToken","media":[{"type":"FULL","formats":[{"cipher":"BF_CBC_STRIPE","format":"$format"}]}],"track_tokens":["$trackToken"]}""".toByteArray(),
             ),
         )
-        if (!response.ok) return null
+        if (!response.ok) {
+            lastRefusal = "media api HTTP ${response.code}"
+            return null
+        }
         val body = Json.obj(response.text) ?: return null
+        Json.list(body, "errors")?.firstOrNull()?.let(Json::objOf)?.let { error ->
+            val text = listOfNotNull(Json.text(error, "message"), Json.text(error, "code"))
+                .joinToString(" ")
+                .ifBlank { "refused" }
+            lastRefusal = text
+        }
         val data = Json.list(body, "data")?.firstOrNull()?.let(Json::objOf) ?: return null
         val media = Json.list(data, "media")?.firstOrNull()?.let(Json::objOf) ?: return null
         val sources = Json.list(media, "sources")?.firstOrNull()?.let(Json::objOf) ?: return null

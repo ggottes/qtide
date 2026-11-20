@@ -42,15 +42,15 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
 
     private lateinit var host: ModuleHost
     private var runner: SourceRunner? = null
-    private var art: Art? = null
+    // mochy reads these before attach, in the same call that makes the module, so they can't wait for a host
+    private val art = Art()
 
     override fun attach(host: ModuleHost) {
         this.host = host
-        art = Art(host)
     }
 
-    override val icon: String? get() = art?.of("qtide-icon.png")
-    override val banner: String? get() = art?.of("qtide-banner.png")
+    override val icon: String? get() = art.of("qtide-icon.png")
+    override val banner: String? get() = art.of("qtide-banner.png")
 
     override val signIn = SignInSpec(
         startUrl = "https://link.tidal.com/",
@@ -91,8 +91,20 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
 
     private fun token() = host.storage.get("refreshToken")
 
-    override fun accountState(): AccountState =
-        if (token().isNullOrBlank()) AccountState.SignedOut else AccountState.SignedIn("Tidal")
+    /** what the last stream really was, in the module's own words, for the player's stream info */
+    @Volatile private var lastLabel: String? = null
+
+    override fun accountState(): AccountState = when {
+        token().isNullOrBlank() -> AccountState.SignedOut
+        lastLabel != null -> AccountState.SignedIn("Tidal · " + lastLabel)
+        else -> AccountState.SignedIn("Tidal")
+    }
+
+    /** the one line that says what a play was: the chip picked and the tier that actually answered */
+    private fun describe(picked: String, label: String): String {
+        host.log("Tidal: chip=$picked stream=$label")
+        return label
+    }
 
     /**
      * Finishes a device login the user approved at link.tidal.com: one poll stores the refresh
@@ -132,6 +144,8 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
         }
 
         val stream = found.stream
+        val picked = picks["quality"] ?: "lossless"
+        lastLabel = describe(picked, stream.label)
         return ResolveResult.Found(
             SourceStream(
                 url = stream.url.orEmpty(),

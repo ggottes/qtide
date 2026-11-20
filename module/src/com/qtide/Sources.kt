@@ -70,6 +70,8 @@ internal sealed interface Source {
         override val label = "Qobuz"
         private var signedIn: com.qtide.Qobuz.Session? = null
 
+        override val reason: String get() = com.qtide.Qobuz.lastRefusal
+
         private fun open(host: ModuleHost): com.qtide.Qobuz.Session? {
             signedIn?.let { return it }
             val pair = appPair.split(":", limit = 2)

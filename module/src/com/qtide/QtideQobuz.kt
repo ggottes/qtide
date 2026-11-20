@@ -39,15 +39,15 @@ class QtideQobuz : SourceModule, ModuleFields, ModuleArt {
     )
 
     private lateinit var host: ModuleHost
-    private var art: Art? = null
+    // mochy reads these before attach, in the same call that makes the module, so they can't wait for a host
+    private val art = Art()
 
     override fun attach(host: ModuleHost) {
         this.host = host
-        art = Art(host)
     }
 
-    override val icon: String? get() = art?.of("qtide-icon.png")
-    override val banner: String? get() = art?.of("qtide-banner.png")
+    override val icon: String? get() = art.of("qtide-icon.png")
+    override val banner: String? get() = art.of("qtide-banner.png")
 
     // the web player refuses to render under 1024px wide, so the sign-in page has to be the desktop one
     override val signIn = SignInSpec(

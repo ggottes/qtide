@@ -1,32 +1,46 @@
 package com.qtide
 
-import com.mochyy.mochymusic.module.ModuleHost
 import java.io.File
 import java.util.zip.ZipFile
 
 /**
  * A module's own pictures, put where mochy reads them from.
  *
- * A code module can't hand the app a zip path: an absolute path, answered with a leading "/", is
- * what mochy turns into a `file://` uri. So the pictures are copied out of the module's own apk
- * (`assets/`) into the module's folder once, and that path is what [icon] and [banner] answer with.
+ * Two things about a zip module make this less obvious than it looks:
  *
- * The apk is found through the class's own code source — a code module is loaded from it, so it is
- * always the file the pictures are in — and read as an ordinary zip. A picture that can't be written
- * just leaves the module with mochy's own art.
+ * 1. **When.** mochy builds its one description of a module (its `about` json, which is where
+ *    `icon`/`banner` come from) in `BridgedModule.open`, which runs *before* `attach`, and it never
+ *    asks again. So the path has to be known before the host exists: it is worked out from where the
+ *    code was loaded from, which mochy settles at load time.
+ * 2. **Where.** A zip module is copied to `code_modules/<id>/<time>/module.apk`, and `host.folder`
+ *    is a different folder (`module_data/<id>`). Neither is the other, so the picture is read out of
+ *    the apk the class was loaded from and written next to it, which needs no host at all.
+ *
+ * The answer is an absolute path with a leading "/": mochy turns that into a `file://` uri and reads
+ * it with Coil, whereas anything without the slash is taken as a link.
  */
-internal class Art(private val host: ModuleHost) {
+internal class Art {
 
     private val done = mutableMapOf<String, String?>()
 
-    /** the path of [name] in the module's folder, copied from the apk on first ask */
+    /** the path of [name] in the module's own folder, copied from the apk on first ask */
     fun of(name: String): String? = done.getOrPut(name) { copy(name) }
 
     private fun copy(name: String): String? = runCatching {
-        val folder = host.folder.apply { mkdirs() }
+        val apk = runCatching { javaClass.protectionDomain?.codeSource?.location?.toURI() }
+            .getOrNull()?.let { File(it) }?.takeIf { it.isFile }
+            // a device's DexClassLoader may say the folder the apk was loaded from, not the apk
+            ?: runCatching { javaClass.protectionDomain?.codeSource?.location?.toURI() }
+                .getOrNull()?.let { File(it) }?.let { if (it.isDirectory) File(it, "module.apk") else null }
+                ?.takeIf { it.isFile }
+            ?: return@runCatching null
+        val folder = apk.parentFile ?: return@runCatching null
         val out = File(folder, name)
         if (!out.isFile || out.length() == 0L) {
-            val bytes = fromApk(name) ?: return@runCatching null
+            val bytes = ZipFile(apk).use { zip ->
+                val entry = zip.getEntry("assets/$name") ?: return@runCatching null
+                zip.getInputStream(entry)?.use { it.readBytes() }
+            } ?: return@runCatching null
             val temp = File(folder, "$name.part")
             temp.writeBytes(bytes)
             if (!temp.renameTo(out)) {
@@ -34,17 +48,7 @@ internal class Art(private val host: ModuleHost) {
                 temp.delete()
             }
         }
-        // the leading slash is how mochy knows this is a path and not a link
+        if (!out.isFile) return@runCatching null
         "/" + out.absolutePath.replace('\\', '/')
     }.getOrNull()
-
-    private fun fromApk(name: String): ByteArray? {
-        val apk = runCatching { javaClass.protectionDomain?.codeSource?.location?.toURI() }.getOrNull()
-            ?: return null
-        val file = runCatching { File(apk) }.getOrNull()?.takeIf { it.isFile } ?: return null
-        return ZipFile(file).use { zip ->
-            val entry = zip.getEntry("assets/$name") ?: return null
-            zip.getInputStream(entry)?.use { it.readBytes() }
-        }
-    }
 }

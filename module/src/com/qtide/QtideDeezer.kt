@@ -40,15 +40,15 @@ class QtideDeezer : SourceModule, ModuleFields, ModuleArt {
     )
 
     private lateinit var host: ModuleHost
-    private var art: Art? = null
+    // mochy reads these before attach, in the same call that makes the module, so they can't wait for a host
+    private val art = Art()
 
     override fun attach(host: ModuleHost) {
         this.host = host
-        art = Art(host)
     }
 
-    override val icon: String? get() = art?.of("qtide-icon.png")
-    override val banner: String? get() = art?.of("qtide-banner.png")
+    override val icon: String? get() = art.of("qtide-icon.png")
+    override val banner: String? get() = art.of("qtide-banner.png")
 
     // the page opens the site; the cookie itself can't come through, so the field does the signing in
     override val signIn = SignInSpec(

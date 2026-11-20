@@ -28,6 +28,13 @@ internal object Qobuz {
 
     class Session(val userToken: String, val appId: String, val secrets: List<String>, val country: String)
 
+    /** the last answer's status, for the page when a call comes back empty */
+    private var lastCode: Int? = null
+
+    /** what went wrong the last time [login] came back empty, as a sentence for the module's page */
+    var lastRefusal = ""
+        private set
+
     class Found(val url: String, val label: String, val codec: String, val sampleRate: Int)
 
     // ---- session --------------------------------------------------------------------------
@@ -37,6 +44,7 @@ internal object Qobuz {
      * secrets are read from the web player's own script, the way every downloader does it.
      */
     fun login(host: ModuleHost, userToken: String, appId: String, appSecret: String): Session? {
+        lastRefusal = ""
         if (userToken.isBlank()) return null
         var id = appId.trim()
         var secrets = if (appSecret.isBlank()) emptyList() else listOf(appSecret.trim())
@@ -47,7 +55,11 @@ internal object Qobuz {
             if (secrets.isEmpty()) secrets = scraped.second
         }
 
-        val me = call(host, "user/get", mapOf("app_id" to id), userToken) ?: return null
+        val me = call(host, "user/get", mapOf("app_id" to id), userToken)
+        if (me == null) {
+            lastRefusal = "Qobuz answered user/get with ${lastCode ?: "nothing"} for app id $id"
+            return null
+        }
         return Session(userToken, id, secrets, Json.text(me, "country_code") ?: "US")
     }
 
@@ -144,6 +156,7 @@ internal object Qobuz {
         val headers = mutableMapOf("X-User-Auth-Token" to token)
         params["app_id"]?.let { headers["X-App-Id"] = it }
         val response = host.http(HttpRequest("$API/$endpoint?$qs", headers = headers))
+        lastCode = response.code
         if (!response.ok) return null
         return Json.obj(response.text)
     }
