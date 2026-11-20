@@ -52,7 +52,7 @@ internal object Deezer {
         val made = Session(
             apiToken = token,
             licenseToken = Json.text(options, "license_token").orEmpty(),
-            canLossless = Json.text(options, "web_lossless") == "true" || Json.text(options, "mobile_lossless") == "true",
+            canLossless = Json.bool(options, "web_lossless") || Json.bool(options, "mobile_lossless"),
             country = Json.text(user, "COUNTRY") ?: "US",
         )
         session = made

@@ -143,12 +143,20 @@ internal object Json {
     fun objOf(value: Any?): Map<String, Any?>? = value as? Map<String, Any?>
 
     fun text(map: Map<String, Any?>?, name: String): String? = when (val value = map?.get(name)) {
-        is String -> "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        is String -> value
         is Number -> value.toString()
         else -> null
     }
 
     fun list(map: Map<String, Any?>?, name: String): List<Any?>? = map?.get(name) as? List<Any?>
+
+    /** a json true/false, which the reader keeps as a Boolean, or the text "true"/"false" some services send */
+    fun bool(map: Map<String, Any?>?, name: String): Boolean = when (val value = map?.get(name)) {
+        is Boolean -> value
+        is String -> value.equals("true", ignoreCase = true) || value == "1"
+        is Number -> value.toInt() != 0
+        else -> false
+    }
 
     fun long(map: Map<String, Any?>?, name: String): Long? = when (val value = map?.get(name)) {
         is Number -> value.toLong()

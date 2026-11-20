@@ -7,7 +7,7 @@
 | *"That file isn't a module."* | the zip has no `manifest.json` at its root | take the built zip, not the sources |
 | Account step red | the token is wrong or expired | paste it again; Tidal's refresh token rotates, take a fresh one |
 | *Find the song* red | the recording isn't on that service in your country | check the spelling, or turn on another service |
-| *Stream* red | the service refused the stream (licence, region, free account) | Deezer needs HiFi for FLAC; Qobuz needs a Studio account for 24-bit |
+| *Stream* red | the service refused the stream (licence, region, free account) | Deezer needs HiFi for FLAC and falls back to its 30 s preview otherwise; Qobuz needs a Studio account for 24-bit |
 | Tidal **hi-res** plays but the test's **Play** step is red | the test plays without labelling the item as DASH | it works in the real player; use Lossless if you want the test green |
 | nothing plays, no error | the module is below YouTube Music in the order | drag Qtide above it on the modules page |
 

@@ -39,6 +39,9 @@ class QtideModule : SourceModule, ModuleFields {
     )
 
     private lateinit var host: ModuleHost
+    private var tidal: Source.Tidal? = null
+    private var qobuz: Source.Qobuz? = null
+    private var deezer: Source.Deezer? = null
 
     override fun attach(host: ModuleHost) {
         this.host = host
@@ -104,9 +107,9 @@ class QtideModule : SourceModule, ModuleFields {
 
     override fun accountState(): AccountState {
         val signedIn = listOfNotNull(
-            tidalToken()?.let { "Tidal" },
-            qobuzToken()?.let { "Qobuz" },
-            deezerArl()?.let { "Deezer" },
+            tidalToken()?.takeIf { it.isNotBlank() }?.let { "Tidal" },
+            qobuzToken()?.takeIf { it.isNotBlank() }?.let { "Qobuz" },
+            deezerArl()?.takeIf { it.isNotBlank() }?.let { "Deezer" },
         )
         return if (signedIn.isEmpty()) AccountState.SignedOut else AccountState.SignedIn(signedIn.joinToString(" · "))
     }
@@ -123,10 +126,11 @@ class QtideModule : SourceModule, ModuleFields {
     ): ResolveResult {
         val quality = picks["quality"] ?: "lossless"
 
+        // the same source objects every call, so a session signed in once is kept
         val sources = buildList {
-            tidalToken()?.let { add(Source.Tidal(it)) }
-            qobuzToken()?.let { add(Source.Qobuz(it)) }
-            deezerArl()?.let { add(Source.Deezer(it)) }
+            tidalToken()?.let { add(tidal ?: Source.Tidal(it).also { tidal = it }) }
+            qobuzToken()?.let { add(qobuz ?: Source.Qobuz(it).also { qobuz = it }) }
+            deezerArl()?.let { add(deezer ?: Source.Deezer(it).also { deezer = it }) }
         }
         if (sources.isEmpty()) {
             report(DiagnosticStep("Account", false, "No token on the module yet"))
@@ -134,7 +138,7 @@ class QtideModule : SourceModule, ModuleFields {
         }
         report(DiagnosticStep("Account", true, sources.joinToString(" · ") { it.label }))
 
-        report(DiagnosticStep("Find the song", null, "Searching ${sources.first().label}…"))
+        report(DiagnosticStep("Find the song", null, "Searching ${sources.joinToString(", ") { it.label }}…"))
         var lastReason = "Not on any of the services"
         for (source in sources) {
             val found = try {
@@ -262,21 +266,41 @@ class QtideModule : SourceModule, ModuleFields {
     )
 
     /**
-     * Bytes (a decrypted Deezer file, or a stitched hi-res one) go in the module's own folder as one
-     * plain file, so the player opens it like any other and a repeat play costs nothing.
+     * Bytes (a decrypted Deezer file) go in the module's own folder as one plain file, so the player
+     * opens it like any other and a repeat play costs nothing. The folder is kept small: a hi-res or
+     * FLAC track is tens of megabytes, so only the newest few stay.
      */
     private fun save(bytes: ByteArray, stream: Handoff): String {
         if (bytes.isEmpty()) return ""
         val folder = host.folder
         folder.mkdirs()
-        val extension = when {
-            stream.codec == "FLAC" -> ".flac"
-            stream.mimeTypeIsFlac() -> ".flac"
-            else -> ".mp3"
-        }
+        val extension = if (stream.codec.equals("FLAC", ignoreCase = true)) ".flac" else ".mp3"
         val file = File(folder, "qtide-" + bytes.size + "-" + Integer.toHexString(bytes.contentHashCode()) + extension)
-        if (!file.isFile || file.length() != bytes.size.toLong()) file.writeBytes(bytes)
-        return file.toURI().toString()
+        if (!file.isFile || file.length() != bytes.size.toLong()) {
+            file.writeBytes(bytes)
+            prune(folder, keep = file)
+        }
+        // three slashes: the uri form every android player reads as a plain path
+        return "file://" + file.absolutePath
+    }
+
+    /** keeps the folder at [MAX_FILES] files and [MAX_BYTES] in all, dropping the oldest first */
+    private fun prune(folder: File, keep: File) {
+        val files = folder.listFiles()?.filter { it.isFile && it != keep && it.name.startsWith("qtide-") }
+            ?.sortedBy { it.lastModified() }?.toMutableList() ?: return
+        var total = files.sumOf { it.length() } + keep.length()
+        while (files.isNotEmpty() && (files.size >= MAX_FILES || total > MAX_BYTES)) {
+            val oldest = files.removeAt(0)
+            total -= oldest.length()
+            oldest.delete()
+        }
+    }
+
+    private companion object {
+        const val TOKEN_KEY = "tidalRefresh"
+        // what the module's folder may hold before the oldest songs are dropped: about ten flac tracks
+        const val MAX_FILES = 10
+        const val MAX_BYTES = 500L * 1024 * 1024
     }
 
     private fun Handoff.mimeTypeIsFlac() = codec.equals("flac", ignoreCase = true)
