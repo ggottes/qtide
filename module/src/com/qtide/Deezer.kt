@@ -36,7 +36,6 @@ internal object Deezer {
 
     class Found(val bytes: ByteArray, val mimeType: String, val label: String, val codec: String, val sampleRate: Int)
 
-    private var cookies = ""
     private var session: Session? = null
 
     /** why the last [stream] came back empty, as a sentence for the module's page */
@@ -65,19 +64,35 @@ internal object Deezer {
     // ---- session --------------------------------------------------------------------------
 
     private fun warmUp(host: ModuleHost) {
-        if (cookies.isNotBlank()) return
+        if (jar.isNotEmpty()) return
         val res = host.http(HttpRequest("https://www.deezer.com/en/", headers = mapOf("User-Agent" to UA)))
         if (!res.ok) return
         takeCookies(res)
     }
 
-    /** the site's cookies, an answer's own included: the gateway binds its csrf token to the sid */
+    /**
+     * The site's cookies as a browser keeps them: one value per name, the newest wins.
+     *
+     * This matters more than it looks. The gateway's csrf token is bound to the session's `sid`, and
+     * an answer to `deezer.getUserData` carries a *new* sid. Appending that to the anonymous one the
+     * warm-up fetched leaves two `sid=...` in the header, and the gateway reads the first: every
+     * later call answers `Invalid CSRF token` and no `TRACK_TOKEN` ever arrives.
+     */
+    private val jar = LinkedHashMap<String, String>()
+
     private fun takeCookies(res: com.mochyy.mochymusic.module.HttpResponse) {
         val setCookie = res.header("set-cookie") ?: return
         if (setCookie.isBlank()) return
-        val fresh = setCookie.split("\n").joinToString("; ") { it.substringBefore(";").trim() }.trim(';', ' ')
-        cookies = if (cookies.isBlank()) fresh else "$cookies; $fresh"
+        setCookie.split("\n").forEach { line ->
+            val pair = line.substringBefore(";").trim()
+            val name = pair.substringBefore("=").trim()
+            val value = pair.substringAfter("=", "").trim()
+            if (name.isNotEmpty() && value.isNotEmpty()) jar[name] = value
+        }
     }
+
+    private fun cookieHeader(arl: String): String =
+        "arl=" + arl + jar.entries.filter { it.key != "arl" }.joinToString("") { "; ${it.key}=${it.value}" }
 
     private fun open(host: ModuleHost, arl: String): Session? {
         session?.let { return it }
@@ -92,7 +107,11 @@ internal object Deezer {
         // user id 0 is the tell every other client checks, and without it a dead cookie looked signed in
         val userId = Json.long(profile, "USER_ID") ?: 0
         if (userId == 0L) {
-            lastReason = "Deezer doesn't know this ARL: the cookie is old or from another account"
+            // deezer answers a rejected ARL with its anonymous user: an old cookie, or this network
+            // (a VPN or a datacenter exit) being treated as a guest, which also reports user 0
+            lastReason = "Deezer treats this session as a guest (user 0, " +
+                (Json.text(user, "OFFER_NAME") ?: "no plan") + ") — the ARL is old, or this network is " +
+                "seen as anonymous; try another network or a fresh ARL"
             return null
         }
         val options = Json.objOf(profile?.get("OPTIONS"))
@@ -108,15 +127,27 @@ internal object Deezer {
         return made
     }
 
-    private fun gateway(host: ModuleHost, arl: String, method: String, args: Map<String, Any?>?, token: String? = null): Map<String, Any?>? {
+    private fun gateway(
+        host: ModuleHost,
+        arl: String,
+        method: String,
+        args: Map<String, Any?>?,
+        token: String? = null,
+        retried: Boolean = false,
+    ): Map<String, Any?>? {
         val url = "https://www.deezer.com/ajax/gw-light.php?api_version=1.0&api_token=" +
             enc(token ?: "null") + "&input=3&method=$method"
-        val cookie = "arl=" + arl + if (cookies.isBlank()) "" else "; $cookies"
         val response = host.http(
             HttpRequest(
                 url = url,
                 method = "POST",
-                headers = mapOf("Content-Type" to "application/json", "User-Agent" to UA, "Cookie" to cookie),
+                headers = mapOf(
+                    "Content-Type" to "application/json",
+                    "User-Agent" to UA,
+                    "Cookie" to cookieHeader(arl),
+                    "Origin" to "https://www.deezer.com",
+                    "Referer" to "https://www.deezer.com/",
+                ),
                 body = Json.write(args ?: emptyMap<String, Any?>()).toByteArray(),
             ),
         )
@@ -129,8 +160,14 @@ internal object Deezer {
         val body = Json.obj(response.text) ?: return null
         val errors = Json.objOf(body["error"])
         if (errors != null && errors.isNotEmpty()) {
-            // {"error":["Invalid CSRF token"], ...} is the cookie/session pairing; anything else is the request
-            lastRefusal = errors.values.joinToString("; ") { it?.toString().orEmpty() }.ifBlank { "refused" }
+            val said = errors.values.joinToString("; ") { it?.toString().orEmpty() }.ifBlank { "refused" }
+            lastRefusal = said
+            // a csrf token only works on the session it was minted for: take a fresh one and retry once
+            if (!retried && said.contains("CSRF", ignoreCase = true) && method != "deezer.getUserData") {
+                session = null
+                val fresh = open(host, arl)?.apiToken
+                if (fresh != null) return gateway(host, arl, method, args, fresh, retried = true)
+            }
             return null
         }
         return Json.objOf(body["results"])
