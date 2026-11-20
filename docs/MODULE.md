@@ -49,11 +49,12 @@ Nothing is downloaded by mochy: the url is handed to its player, and **the playe
 | --- | --- | --- | --- |
 | Tidal | refresh token → access token (two client pairs, one per tier) | `api.tidal.com/v1/search/tracks` | CD: one FLAC link · hi-res: DASH manifest as a `data:` uri |
 | Qobuz | user token, app pair scraped from `play.qobuz.com` | `track/search` | `track/getFileUrl` with an md5 signature: one FLAC link |
-| Deezer | `arl` cookie → `checkForm` + licence token (needs the site's own cookies first) | `api.deezer.com/search` | licence → `media.deezer.com/v1/get_url`; the preview is used when a full file isn't licensed |
+| Deezer | `arl` cookie → `checkForm` + licence token (needs the site's own cookies first) | `api.deezer.com/search` | licence → `media.deezer.com/v1/get_url`, then the striped file is decrypted with Blowfish (`Blowfish.kt`) and saved; the free preview is only the last resort |
 
-Deezer's decoder (Blowfish over 2048-byte slices) is not in this project: the licence's own url is
-played as it comes, and a file that arrives encrypted is saved as downloaded. For a HiFi account
-that is a FLAC; without one it is MP3 320.
+Deezer strips its files: every 6144 bytes, the first 2048 are Blowfish-CBC under a key built from
+the track id (`md5(id)`, halves xored with `g4el58wc0zvf9na1`), starting from IV `0001020304050607`.
+`Blowfish.kt` is the module's own implementation of that cipher (the platform's is not guaranteed
+on every Android version) and was checked against the published vectors and against a real track.
 
 ## Why no dependencies
 

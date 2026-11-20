@@ -7,7 +7,7 @@ accounts. One module, three catalogues, each with its own token on the module's 
 | --- | --- | --- |
 | **Tidal** | a refresh token | FLAC 16/44.1 and, where the master allows, **hi-res up to 24-bit** (as DASH) |
 | **Qobuz** | a user token (`X-User-Auth-Token`) | FLAC 16/44.1, up to 24-bit on Studio accounts |
-| **Deezer** | the `arl` cookie | MP3 320 (FLAC on a HiFi account) |
+| **Deezer** | the `arl` cookie | **FLAC** on a HiFi account, MP3 320 otherwise — the file is decrypted in the module |
 
 Songs are asked for in the order **Tidal → Qobuz → Deezer**; the first one that has the recording
 wins. Quality is a chip on the module's page: Hi-Res, Lossless or High.
@@ -45,7 +45,7 @@ play → search the services in order (first artist + title, matched by recordin
      → Tidal / Qobuz: a signed link to the file
      → Tidal hi-res: a DASH manifest (2 KB) handed over as a data: uri;
                      the player fetches its segments as it plays
-     → Deezer: the file is downloaded, decrypted here, saved, and played as one file
+     → Deezer: the file is downloaded, de-striped (Blowfish-CBC), saved, and played as one file
 ```
 
 ## Building
@@ -92,4 +92,6 @@ build.sh, toolchain.sh    the build
   works. Pick Lossless if you want the test to be green.
 - **Dolby Atmos** is not reachable through the public Tidal api: the atmos row answers with the
   stereo rendition on every quality and parameter we tried (2026-11-20).
-- **Deezer** only streams FLAC on a HiFi account; without one it plays MP3 320.
+- **Deezer** only streams FLAC on a HiFi account; without one it plays MP3 320. Either way the
+  file is decrypted here (a 5-minute FLAC is about 39 MB and takes under a second to unwind), so the
+  30-second preview is only the fallback when the account can't get a full file at all.

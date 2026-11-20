@@ -106,6 +106,11 @@ internal object Deezer {
 
     // ---- stream ---------------------------------------------------------------------------
 
+    /**
+     * Deezer's files are 2048-byte slices with every third one Blowfish-encrypted under a key made
+     * from the track's own id. The file is decrypted here and handed over whole, so the player opens
+     * one ordinary flac/mp3 and the 30-second preview is never the fallback for a listening account.
+     */
     fun stream(host: ModuleHost, arl: String, trackId: String, quality: String): Found? {
         val open = open(host, arl) ?: return null
         val wantFlac = (quality == "lossless" || quality == "hires") && open.canLossless
@@ -132,9 +137,13 @@ internal object Deezer {
             return Found(bytes, "audio/mpeg", "Preview · MP3", "MP3", 44100)
         }
 
-        val bytes = download(host, url) ?: return null
-        val flac = format == "FLAC"
-        return if (flac && format == "FLAC") {
+        val raw = download(host, url) ?: return null
+        // every /media/ and /mobile/ path is striped; decrypted in place, one buffer
+        val bytes = if (url.contains("/media/") || url.contains("/mobile/")) {
+            runCatching { Blowfish.decryptStripe(raw, blowfishKey(trackId)) }.getOrDefault(raw)
+        } else raw
+
+        return if (format == "FLAC") {
             Found(bytes, "audio/flac", "CD · FLAC", "FLAC", 44100)
         } else {
             Found(bytes, "audio/mpeg", if (format == "MP3_128") "MP3 128" else "MP3 320", "MP3", 44100)
@@ -155,6 +164,17 @@ internal object Deezer {
         val media = Json.list(data, "media")?.firstOrNull()?.let(Json::objOf)
         val sources = Json.list(media, "sources")?.firstOrNull()?.let(Json::objOf) ?: return null
         return Json.text(sources, "url")
+    }
+
+    /** md5 of the track id, its two halves xored with Deezer's app secret: the striping key */
+    private fun blowfishKey(trackId: String): ByteArray {
+        val digest = java.security.MessageDigest.getInstance("MD5")
+            .digest(trackId.toByteArray(Charsets.US_ASCII))
+            .joinToString("") { "%02x".format(it) }
+        val key = CharArray(16) { i ->
+            (digest[i].code xor digest[i + 16].code xor "g4el58wc0zvf9na1"[i].code).toChar()
+        }
+        return ByteArray(16) { key[it].code.toByte() }
     }
 
     private fun download(host: ModuleHost, url: String): ByteArray? {
