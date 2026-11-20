@@ -91,5 +91,5 @@ build.sh, toolchain.sh    the build
   labelling the item as DASH, so it can report `Play` as failed for that tier while real playback
   works. Pick Lossless if you want the test to be green.
 - **Dolby Atmos** is not reachable through the public Tidal api: the atmos row answers with the
-  stereo rendition. See `notes` in the parent project, or just pick Lossless.
+  stereo rendition on every quality and parameter we tried (2026-11-20).
 - **Deezer** only streams FLAC on a HiFi account; without one it plays MP3 320.
