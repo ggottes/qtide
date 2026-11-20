@@ -47,6 +47,10 @@ internal object Deezer {
     var lastRefusal = ""
         private set
 
+    /** how long the last whole-file download took, for a step that was cut short by the app's limit */
+    var lastTiming = ""
+        private set
+
     /** a fresh ARL on the page: the old session was for the old cookie, so it goes */
     fun reset() {
         session = null
@@ -171,6 +175,7 @@ internal object Deezer {
     fun stream(host: ModuleHost, arl: String, trackId: String, quality: String): Found? {
         lastReason = ""
         lastRefusal = ""
+        lastTiming = ""
         val open = open(host, arl) ?: run {
             if (lastReason.isBlank() && lastRefusal.isNotBlank()) {
                 lastReason = "Deezer's session was refused: $lastRefusal"
@@ -186,7 +191,12 @@ internal object Deezer {
             return null
         }
 
-        val info = gateway(host, arl, "song.getData", mapOf("SNG_ID" to trackId), open.apiToken)
+        // a song Deezer has replaced answers with the newer copy under FALLBACK; that copy's token is
+        // the one its file is served under, so a replaced track would otherwise come back empty
+        var info = gateway(host, arl, "song.getData", mapOf("SNG_ID" to trackId), open.apiToken)
+        Json.objOf(info?.get("FALLBACK"))?.takeIf { it.isNotEmpty() }?.let { info = it }
+        // user uploads (a negative id) only exist as MP3_MISC; asking for anything else is refused
+        val personal = trackId.trim().startsWith("-")
         val trackToken = Json.text(info, "TRACK_TOKEN")
         if (trackToken == null) {
             lastReason = "Deezer has no file for this track (region or rights)" +
@@ -194,16 +204,29 @@ internal object Deezer {
             return null
         }
 
-        val steps = Ladder.steps(quality, RUNGS)
+        val steps = if (personal) listOf("MP3_MISC") else Ladder.steps(quality, RUNGS)
         var qualitiesRefused = ""
         for (format in steps) {
             if (format == "FLAC" && !open.canLossless) continue
             val url = licenceUrl(host, open.licenseToken, trackToken, format)
             if (url == null) {
                 if (lastRefusal.isNotBlank()) qualitiesRefused = lastRefusal
+                // a dead connection isn't a format Deezer turned down: another format would only wait again
+                if (lastRefusal.startsWith("media api HTTP") || lastRefusal == "refused") {
+                    lastReason = "Deezer's licence call failed (${lastRefusal})"
+                    return null
+                }
                 continue
             }
-            val raw = download(host, url) ?: continue
+            val startedAt = System.currentTimeMillis()
+            val raw = download(host, url)
+            if (raw == null) {
+                lastReason = "Deezer's file didn't arrive (the link answered nothing)"
+                continue
+            }
+            val took = System.currentTimeMillis() - startedAt
+            // the file is decrypted whole here, so a big FLAC over a slow line must not look like a refusal
+            lastTiming = "the ${bytesLabel(format)} file took ${took / 1000} s (${raw.size / 1024} KB)"
             // every /media/ and /mobile/ path is striped; decrypted in place, one buffer
             val bytes = if (url.contains("/media/") || url.contains("/mobile/")) {
                 Blowfish.decryptStripe(raw, blowfishKey(trackId))
@@ -221,10 +244,18 @@ internal object Deezer {
         return null
     }
 
+    private fun bytesLabel(format: String) = when (format) {
+        "FLAC" -> "FLAC"
+        "MP3_128" -> "MP3 128"
+        "MP3_MISC" -> "upload"
+        else -> "MP3 320"
+    }
+
     /** the file as it actually came back: the mime, label and codec follow the format that answered */
     private fun found(bytes: ByteArray, format: String): Found = when (format) {
         "FLAC" -> Found(bytes, "audio/flac", "CD · FLAC", "FLAC", flacRate(bytes))
         "MP3_128" -> Found(bytes, "audio/mpeg", "MP3 128", "MP3", 44100)
+        "MP3_MISC" -> Found(bytes, "audio/mpeg", "Upload · MP3", "MP3", 44100)
         else -> Found(bytes, "audio/mpeg", "MP3 320", "MP3", 44100)
     }
 

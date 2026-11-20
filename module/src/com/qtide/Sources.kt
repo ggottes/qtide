@@ -14,6 +14,16 @@ import com.mochyy.mochymusic.module.TrackQuery
 internal sealed interface Source {
     val label: String
 
+    /**
+     * The last call's timings, for a failure that is really "that took too long": mochy gives a
+     * module 12 s per song before it moves on, and a Deezer FLAC is downloaded and unwound here
+     * before anything is handed over, so a slow line must read as a slow line and not as a refusal.
+     */
+    val timings: String get() = ""
+
+    /** words for "the service was too slow", or null when [reason] says something better */
+    fun tooSlow(took: Long): String? = null
+
     /** why the last [stream] came back empty, in the service's own words; blank when it just failed */
     val reason: String get() = ""
 
@@ -96,6 +106,13 @@ internal sealed interface Source {
 
         override val reason: String get() = com.qtide.Deezer.lastReason
 
+        override val timings: String get() = com.qtide.Deezer.lastTiming
+
+        override fun tooSlow(took: Long): String =
+            "Deezer was still download" + "ing the file after ${took} s; " +
+                (com.qtide.Deezer.lastTiming.ifBlank { "the file was large" }) +
+                ". Pick High (MP3 320) for this line, or let it finish and play again"
+
         /** true when the ARL itself was turned down, rather than the track */
         override fun signedOut(): Boolean =
             com.qtide.Deezer.lastReason.contains("ARL") || com.qtide.Deezer.lastReason.contains("licence token")
@@ -146,6 +163,9 @@ internal class SourceRunner(
 
     fun problem() = lastProblem
 
+    /** the app gives a module 12 s; start telling the user at this much of it */
+    private val warnedAt = 8_000L
+
     suspend fun find(track: TrackQuery, quality: String, report: (Step) -> Unit): Outcome? {
         report(Step("Find the song", null, "Searching ${source.label}…"))
         val best = try {
@@ -164,13 +184,27 @@ internal class SourceRunner(
         report(Step("Find the song", true, "${best.track.title} · ${best.track.artist}"))
 
         report(Step("Stream", null, "Opening the stream…"))
+        // a call that later gets cut by the app's 12 s limit has already told the page why by then
+        val startedAt = System.currentTimeMillis()
+        val clock = Thread {
+            while (true) {
+                Thread.sleep(2_000)
+                val took = (System.currentTimeMillis() - startedAt) / 1000
+                if (took * 1000 >= warnedAt) {
+                    val words = source.tooSlow(took) ?: continue
+                    report(Step("Stream", false, words))
+                }
+            }
+        }.apply { isDaemon = true; start() }
         val stream = try {
             source.stream(host, best.track.id, quality)
         } catch (e: Exception) {
+            clock.interrupt()
             lastProblem = "${source.label} gave no stream: ${e.message ?: e.javaClass.simpleName}"
             report(Step("Stream", false, lastProblem))
             return null
         }
+        clock.interrupt()
         if (stream == null) {
             lastProblem = source.reason.ifBlank { "${source.label} gave no stream" }
             report(Step("Stream", false, lastProblem))
