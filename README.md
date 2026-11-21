@@ -89,9 +89,10 @@ module/src/com/qtide/
 ├── Blowfish.kt           Deezer's striped files are decrypted with this
 ├── Ladder.kt             one quality chip's steps, best first
 ├── SignIn.kt             what the sign-in browser's headers become
-├── Art.kt                the icon and banner, out of the apk into the module's folder
+├── AccountLabel.kt       the one line on the page: who is signed in, on what plan
+├── Art.kt                the icon and banner, as links mochy can load
 └── Json.kt               a small json reader/writer: no dependencies but kotlin
-assets/                    the icon (512×512) and banner (1200×600); tools/make-art.py draws them
+assets/                    icons/icon-<service>.png (512²) and banner/banner.png (1200×600)
 tools/AndroidManifest.xml  the apk's shell; build.sh swaps the entry class into it
 build.sh, toolchain.sh     one zip per service
 ```
@@ -114,3 +115,6 @@ fix to the shared code reaches all three at once.
 - **Signing in to Deezer** can't be fully automatic: `arl` is an `HttpOnly` cookie, and Mochy's
   sign-in browser only forwards request headers, never cookies. The page opens deezer.com for you;
   the cookie is still copied from a desktop browser once.
+- **The icon and banner are links**, served from this repo through jsDelivr. Mochy asks a code
+  module for its pictures once, before it can give it a folder, so a file path can't work; a link
+  needs nothing from the app. They are cached after the first load.
