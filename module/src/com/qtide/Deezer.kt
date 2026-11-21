@@ -37,6 +37,7 @@ internal object Deezer {
     class Found(val bytes: ByteArray, val mimeType: String, val label: String, val codec: String, val sampleRate: Int)
 
     private var session: Session? = null
+    private var signedInAs: String? = null
 
     /** why the last [stream] came back empty, as a sentence for the module's page */
     var lastReason = ""
@@ -50,9 +51,11 @@ internal object Deezer {
     var lastTiming = ""
         private set
 
-    /** a fresh ARL on the page: the old session was for the old cookie, so it goes */
+    /** a fresh ARL on the page: the old session *and its sid* were for the old cookie, so both go */
     fun reset() {
         session = null
+        signedInAs = null
+        jar.clear()
     }
 
     /** whether the cookie is a real account's: Deezer's anonymous answer (user id 0) is a no */
@@ -95,6 +98,8 @@ internal object Deezer {
         "arl=" + arl + jar.entries.filter { it.key != "arl" }.joinToString("") { "; ${it.key}=${it.value}" }
 
     private fun open(host: ModuleHost, arl: String): Session? {
+        // the sid cookie belongs to the arl that fetched it; another arl under that sid is a csrf mismatch
+        if (signedInAs != arl) reset()
         session?.let { return it }
         if (arl.isBlank()) return null
         warmUp(host)
@@ -124,6 +129,7 @@ internal object Deezer {
             country = Json.text(user, "COUNTRY") ?: "US",
         )
         session = made
+        signedInAs = arl
         return made
     }
 
