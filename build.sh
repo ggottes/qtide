@@ -18,33 +18,40 @@ build_one() {
   work="work/$id"
   rm -rf "$work"
   mkdir -p "$work/dex" "$work/apk/root/assets"
-  # the module's own pictures ride in the apk's assets: the code copies them into its folder, which
+  # the module's own pictures ride in the apk's assets: the code copies them beside the apk, which
   # is where mochy reads a code module's icon and banner from
   cp assets/qtide-icon.png assets/qtide-banner.png "$work/apk/root/assets/"
 
   # only this module's class is the entry; the three share the sources, but the manifest names one
   sed "s/com.qtide.ENTRY/$entry/" tools/AndroidManifest.xml > "$work/apk/root/AndroidManifest.xml"
 
-  "$BT/d8.bat" --release --min-api 26 --lib "$ANDROID_JAR" --output "$work/dex" \
+  "$D8" --release --min-api 26 --lib "$ANDROID_JAR" --output "$work/dex" \
     "$STDLIB" "$COROUTINES" "$SERJSON" "$SERCORE" $(find out-classes -name "*.class")
 
   cp "$work/dex/classes.dex" "$work/apk/root/"
   (
     cd "$work/apk"
-    "$BT/aapt2.exe" link -o base.apk -I "$ANDROID_JAR" --manifest root/AndroidManifest.xml -A root/assets
-    python -I -c "import zipfile, shutil; shutil.copy('base.apk','unsigned.apk'); z=zipfile.ZipFile('unsigned.apk','a',zipfile.ZIP_DEFLATED); z.write('root/classes.dex','classes.dex'); z.close()"
-    "$BT/zipalign.exe" -f 4 unsigned.apk aligned.apk
+    "$AAPT2" link -o base.apk -I "$ANDROID_JAR" --manifest root/AndroidManifest.xml -A root/assets
+    "$PYTHON" -I -c "import zipfile, shutil; shutil.copy('base.apk','unsigned.apk'); z=zipfile.ZipFile('unsigned.apk','a',zipfile.ZIP_DEFLATED); z.write('root/classes.dex','classes.dex'); z.close()"
+    "$ZIPALIGN" -f 4 unsigned.apk aligned.apk
     if [ "$RELEASE" = "1" ] && [ -n "$KEYSTORE" ]; then
-      "$BT/apksigner.bat" sign --ks "$KEYSTORE" --ks-pass "pass:$KS_PASS" \
+      "$APKSIGNER" sign --ks "$KEYSTORE" --ks-pass "pass:$KS_PASS" \
         --key-pass "pass:${KEY_PASS:-$KS_PASS}" --ks-key-alias "$KEY_ALIAS" --out module.apk aligned.apk
     else
-      "$BT/apksigner.bat" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android \
+      # a mac has no debug keystore until something makes one
+      if [ ! -f "$HOME/.android/debug.keystore" ]; then
+        mkdir -p "$HOME/.android"
+        "$KEYTOOL" -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android \
+          -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+          -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1 || true
+      fi
+      "$APKSIGNER" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android \
         --key-pass pass:android --ks-key-alias androiddebugkey --out module.apk aligned.apk
     fi
   )
 
   mkdir -p build
-  python -I - "$work/apk/module.apk" "build/$out" "$id" "$name" "$description" "$resources" <<'PY'
+  "$PYTHON" -I - "$work/apk/module.apk" "build/$out" "$id" "$name" "$description" "$resources" <<'PY'
 import json, sys, zipfile
 apk, out, mid, name, desc, resources = sys.argv[1:7]
 manifest = {

@@ -1,0 +1,2 @@
+# the build scripts are run by sh on the mac, not by cmd: keep them LF or sh reads the CR as part of every command
+*.sh text eol=lf

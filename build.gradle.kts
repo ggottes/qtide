@@ -27,6 +27,7 @@ sourceSets {
     }
 }
 
+// one of the three; build.sh is what actually builds the zips, this is for an IDE run
 application {
-    mainClass.set("com.qtide.QtideModule")
+    mainClass.set("com.qtide.QtideTidal")
 }
