@@ -34,7 +34,7 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
     override val info = ModuleInfo(
         id = "qtide-tidal",
         name = "Qtide — Tidal",
-        version = "1.3",
+        version = "1.4",
         description = "Tidal: your own account, lossless and hi-res where it has it",
         sourceUrl = "https://github.com/ggottes/qtide",
         author = "geisselgottes",

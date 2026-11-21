@@ -32,7 +32,7 @@ class QtideQobuz : SourceModule, ModuleFields, ModuleArt {
     override val info = ModuleInfo(
         id = "qtide-qobuz",
         name = "Qtide — Qobuz",
-        version = "1.3",
+        version = "1.4",
         description = "Qobuz: your own account, FLAC up to 24-bit on a Studio plan",
         sourceUrl = "https://github.com/ggottes/qtide",
         author = "geisselgottes",
