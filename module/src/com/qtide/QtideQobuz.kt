@@ -39,15 +39,15 @@ class QtideQobuz : SourceModule, ModuleFields, ModuleArt {
     )
 
     private lateinit var host: ModuleHost
-    // mochy reads these before attach, in the same call that makes the module, so they can't wait for a host
-    private val art = Art()
 
     override fun attach(host: ModuleHost) {
         this.host = host
     }
 
-    override val icon: String? get() = art.of("qtide-icon.png")
-    override val banner: String? get() = art.of("qtide-banner.png")
+    // mochy only shows icon/banner it reads from a manifest; a code module's own ModuleArt values are
+    // read before attach and this class has no code source on a phone, so they are left out on purpose
+    override val icon: String? get() = null
+    override val banner: String? get() = null
 
     // the web player refuses to render under 1024px wide, so the sign-in page has to be the desktop one
     override val signIn = SignInSpec(
@@ -105,15 +105,24 @@ class QtideQobuz : SourceModule, ModuleFields, ModuleArt {
 
     private fun token() = host.storage.get("userToken")
 
-    override fun accountState(): AccountState =
-        if (token().isNullOrBlank()) AccountState.SignedOut else AccountState.SignedIn("Qobuz")
+    override fun accountState(): AccountState = when {
+        token().isNullOrBlank() -> AccountState.SignedOut
+        // whoever and whatever user/get named last, until the next check
+        else -> AccountState.SignedIn(accountLabel("Qobuz", who(), plan(), country()))
+    }
+
+    private fun who() = host.storage.get("who")
+    private fun plan() = host.storage.get("plan")
+    private fun country() = host.storage.get("country")
 
     override suspend fun verifyAccount(): AccountState {
         val token = token()
         if (token.isNullOrBlank()) return AccountState.SignedOut
+        // a fresh session, so a plan that changed since the last check shows
+        signedIn = null
         val session = session()
             ?: return AccountState.Expired("Qobuz refused the saved sign-in")
-        return AccountState.SignedIn("Qobuz · ${session.country}")
+        return AccountState.SignedIn(accountLabel("Qobuz", session.who, session.plan, session.country))
     }
 
     private var signedIn: Qobuz.Session? = null
@@ -123,12 +132,16 @@ class QtideQobuz : SourceModule, ModuleFields, ModuleArt {
         val token = token() ?: return null
         val pair = host.storage.get("appPair").orEmpty().split(":", limit = 2)
         return Qobuz.login(host, token, pair.getOrNull(0).orEmpty(), pair.getOrNull(1).orEmpty())
-            ?.also { signedIn = it }
+            ?.also {
+                signedIn = it
+                host.storage.set("who", it.who)
+                host.storage.set("plan", it.plan)
+                host.storage.set("country", it.country)
+            }
     }
 
     override fun signOut() {
-        host.storage.set("userToken", null)
-        host.storage.set("appPair", null)
+        listOf("userToken", "appPair", "who", "plan", "country").forEach { host.storage.set(it, null) }
         signedIn = null
     }
 

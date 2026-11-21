@@ -130,8 +130,8 @@ def banner(path):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    icon(os.path.join(OUT, "qtide-icon.png"))
-    banner(os.path.join(OUT, "qtide-banner.png"))
+    icon(os.path.join(OUT, "icon.png"))
+    banner(os.path.join(OUT, "banner.png"))
     print("wrote", os.path.normpath(OUT))
 
 

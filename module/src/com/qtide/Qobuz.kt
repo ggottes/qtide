@@ -26,7 +26,15 @@ internal object Qobuz {
         "lossless" to listOf("6"),
     )
 
-    class Session(val userToken: String, val appId: String, val secrets: List<String>, val country: String)
+    class Session(
+        val userToken: String,
+        val appId: String,
+        val secrets: List<String>,
+        val country: String,
+        /** what user/get says about the account, for the page: display_name, email, subscription label */
+        val who: String?,
+        val plan: String?,
+    )
 
     /** the last answer's status, for the page when a call comes back empty */
     private var lastCode: Int? = null
@@ -60,7 +68,12 @@ internal object Qobuz {
             lastRefusal = "Qobuz answered user/get with ${lastCode ?: "nothing"} for app id $id"
             return null
         }
-        return Session(userToken, id, secrets, Json.text(me, "country_code") ?: "US")
+        // the same call the token is checked with also names the account and its plan
+        val sub = Json.objOf(me["subscription"])
+        val plan = Json.text(sub, "offer").orEmpty().ifBlank { Json.text(sub, "label").orEmpty() }.ifBlank { null }
+        val who = Json.text(me, "display_name").orEmpty().ifBlank { Json.text(me, "login").orEmpty() }
+            .ifBlank { Json.text(me, "email").orEmpty() }.ifBlank { null }
+        return Session(userToken, id, secrets, Json.text(me, "country_code") ?: "US", who, plan)
     }
 
     /** the app id and candidate secrets out of play.qobuz.com's bundle, as the reference does */

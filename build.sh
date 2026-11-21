@@ -17,10 +17,7 @@ build_one() {
 
   work="work/$id"
   rm -rf "$work"
-  mkdir -p "$work/dex" "$work/apk/root/assets"
-  # the module's own pictures ride in the apk's assets: the code copies them beside the apk, which
-  # is where mochy reads a code module's icon and banner from
-  cp assets/qtide-icon.png assets/qtide-banner.png "$work/apk/root/assets/"
+  # ask anything, so mochy never shows it. these names are the ones the wiki asks for.
 
   # only this module's class is the entry; the three share the sources, but the manifest names one
   sed "s/com.qtide.ENTRY/$entry/" tools/AndroidManifest.xml > "$work/apk/root/AndroidManifest.xml"
@@ -31,7 +28,7 @@ build_one() {
   cp "$work/dex/classes.dex" "$work/apk/root/"
   (
     cd "$work/apk"
-    "$AAPT2" link -o base.apk -I "$ANDROID_JAR" --manifest root/AndroidManifest.xml -A root/assets
+    "$AAPT2" link -o base.apk -I "$ANDROID_JAR" --manifest root/AndroidManifest.xml
     "$PYTHON" -I -c "import zipfile, shutil; shutil.copy('base.apk','unsigned.apk'); z=zipfile.ZipFile('unsigned.apk','a',zipfile.ZIP_DEFLATED); z.write('root/classes.dex','classes.dex'); z.close()"
     "$ZIPALIGN" -f 4 unsigned.apk aligned.apk
     if [ "$RELEASE" = "1" ] && [ -n "$KEYSTORE" ]; then
@@ -63,8 +60,8 @@ manifest = {
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
     z.write(apk, "module.apk")
-    z.write("assets/qtide-icon.png", "icon.png")
-    z.write("assets/qtide-banner.png", "banner.png")
+    z.write("assets/icon.png", "icon.png")
+    z.write("assets/banner.png", "banner.png")
 PY
   echo "built build/$out"
 }

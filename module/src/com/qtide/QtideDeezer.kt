@@ -40,15 +40,15 @@ class QtideDeezer : SourceModule, ModuleFields, ModuleArt {
     )
 
     private lateinit var host: ModuleHost
-    // mochy reads these before attach, in the same call that makes the module, so they can't wait for a host
-    private val art = Art()
 
     override fun attach(host: ModuleHost) {
         this.host = host
     }
 
-    override val icon: String? get() = art.of("qtide-icon.png")
-    override val banner: String? get() = art.of("qtide-banner.png")
+    // mochy only shows icon/banner it reads from a manifest; a code module's own ModuleArt values are
+    // read before attach and this class has no code source on a phone, so they are left out on purpose
+    override val icon: String? get() = null
+    override val banner: String? get() = null
 
     // the page opens the site; the cookie itself can't come through, so the field does the signing in
     override val signIn = SignInSpec(
@@ -103,7 +103,8 @@ class QtideDeezer : SourceModule, ModuleFields, ModuleArt {
     private fun arl() = host.storage.get("arl")
 
     override fun accountState(): AccountState =
-        if (arl().isNullOrBlank()) AccountState.SignedOut else AccountState.SignedIn("Deezer")
+        if (arl().isNullOrBlank()) AccountState.SignedOut
+        else AccountState.SignedIn(accountLabel("Deezer", host.storage.get("who"), host.storage.get("plan")))
 
     /** asks Deezer which account the cookie is for; the anonymous answer counts as signed out */
     override suspend fun verifyAccount(): AccountState {
@@ -112,11 +113,12 @@ class QtideDeezer : SourceModule, ModuleFields, ModuleArt {
         // the plan is the useful part: Free answers user 0, which is the whole Deezer problem in one line
         val plan = Deezer.check(host, arl)
             ?: return AccountState.Expired(Deezer.lastReason.ifBlank { "Deezer refused the ARL" })
-        return AccountState.SignedIn("Deezer · $plan")
+        host.storage.set("plan", plan)
+        return AccountState.SignedIn(accountLabel("Deezer", host.storage.get("who"), plan))
     }
 
     override fun signOut() {
-        host.storage.set("arl", null)
+        listOf("arl", "who", "plan").forEach { host.storage.set(it, null) }
         Deezer.reset()
     }
 

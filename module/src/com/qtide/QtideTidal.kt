@@ -42,15 +42,14 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
 
     private lateinit var host: ModuleHost
     private var runner: SourceRunner? = null
-    // mochy reads these before attach, in the same call that makes the module, so they can't wait for a host
-    private val art = Art()
-
     override fun attach(host: ModuleHost) {
         this.host = host
     }
 
-    override val icon: String? get() = art.of("qtide-icon.png")
-    override val banner: String? get() = art.of("qtide-banner.png")
+    // mochy only shows icon/banner it reads from a manifest; a code module's own ModuleArt values are
+    // read before attach and this class has no code source on a phone, so they are left out on purpose
+    override val icon: String? get() = null
+    override val banner: String? get() = null
 
     override val signIn = SignInSpec(
         startUrl = "https://link.tidal.com/",
@@ -90,14 +89,15 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
     )
 
     private fun token() = host.storage.get("refreshToken")
+    private fun stored(key: String) = host.storage.get(key)
 
     /** what the last stream really was, in the module's own words, for the player's stream info */
     @Volatile private var lastLabel: String? = null
 
     override fun accountState(): AccountState = when {
         token().isNullOrBlank() -> AccountState.SignedOut
-        lastLabel != null -> AccountState.SignedIn("Tidal · " + lastLabel)
-        else -> AccountState.SignedIn("Tidal")
+        // the country is known once the module has signed in; the last played tier until then
+        else -> AccountState.SignedIn(accountLabel("Tidal", stored("country"), lastLabel))
     }
 
     /** the one line that says what a play was: the chip picked and the tier that actually answered */
@@ -116,7 +116,8 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
         if (token.isNullOrBlank()) return AccountState.SignedOut
         val session = Tidal.login(host, token)
             ?: return AccountState.Expired("Tidal refused the saved sign-in")
-        return AccountState.SignedIn("Tidal · ${session.country}")
+        host.storage.set("country", session.country)
+        return AccountState.SignedIn(accountLabel("Tidal", session.country, stored("account")))
     }
 
     override fun signOut() {
