@@ -44,10 +44,9 @@ class QtideQobuz : SourceModule, ModuleFields, ModuleArt {
         this.host = host
     }
 
-    // mochy only shows icon/banner it reads from a manifest; a code module's own ModuleArt values are
-    // read before attach and this class has no code source on a phone, so they are left out on purpose
-    override val icon: String? get() = null
-    override val banner: String? get() = null
+    // a link, not a path: there is no host yet when mochy asks, and no code source to read the apk from
+    override val icon: String? get() = Art.icon("qobuz")
+    override val banner: String? get() = Art.BANNER
 
     // the web player refuses to render under 1024px wide, so the sign-in page has to be the desktop one
     override val signIn = SignInSpec(

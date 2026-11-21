@@ -45,10 +45,9 @@ class QtideDeezer : SourceModule, ModuleFields, ModuleArt {
         this.host = host
     }
 
-    // mochy only shows icon/banner it reads from a manifest; a code module's own ModuleArt values are
-    // read before attach and this class has no code source on a phone, so they are left out on purpose
-    override val icon: String? get() = null
-    override val banner: String? get() = null
+    // a link, not a path: there is no host yet when mochy asks, and no code source to read the apk from
+    override val icon: String? get() = Art.icon("deezer")
+    override val banner: String? get() = Art.BANNER
 
     // the page opens the site; the cookie itself can't come through, so the field does the signing in
     override val signIn = SignInSpec(
