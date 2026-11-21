@@ -17,7 +17,7 @@ build_one() {
 
   work="work/$id"
   rm -rf "$work"
-  # ask anything, so mochy never shows it. these names are the ones the wiki asks for.
+  mkdir -p "$work/dex" "$work/apk/root"
 
   # only this module's class is the entry; the three share the sources, but the manifest names one
   sed "s/com.qtide.ENTRY/$entry/" tools/AndroidManifest.xml > "$work/apk/root/AndroidManifest.xml"
