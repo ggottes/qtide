@@ -196,7 +196,51 @@ internal object Tidal {
     // ---- stream ---------------------------------------------------------------------------
 
     fun stream(host: ModuleHost, session: Session, trackId: String, quality: String): Found? =
-        Ladder.over(Ladder.steps(quality, RUNGS)) { step -> one(host, session, trackId, step) }?.second
+        plan(host, session, trackId, quality).let { steps ->
+            val tries = steps.mapNotNull { step -> one(host, session, trackId, step) }
+            // what the chip asked for is FLAC: take the first real FLAC, and only fall back to AAC
+            // when Tidal had none, with the label saying AAC
+            tries.firstOrNull { it.codec == "FLAC" } ?: tries.lastOrNull()
+        }
+
+    /**
+     * What Tidal will actually serve, asked before anything is requested: `audioModes` is the song's
+     * own row (`STEREO` is mp4 audio, `LOSSLESS`/`HIRES_LOSSLESS` are FLAC, and a song with no
+     * `LOSSLESS`/`HIRES_LOSSLESS` has no FLAC at all).
+     *
+     * Without this, a track with no hi-res master still answered a hi-res request — with AAC. Asking
+     * for the best tier the song has is what keeps "Hi-Res" from playing 320 kbps and calling itself
+     * lossless.
+     */
+    private fun plan(host: ModuleHost, session: Session, trackId: String, quality: String): List<String> {
+        val row = bodyOf(host, trackRows(trackId, session.country), session.accessToken)
+        val song = Json.objOf(row?.let { Json.list(it, "data") }?.firstOrNull()) ?: return Ladder.steps(quality, RUNGS)
+        val modes = (Json.list(song, "audioModes") ?: return Ladder.steps(quality, RUNGS))
+            .mapNotNull { it?.toString() }
+            .toSet()
+        // no modes at all means Tidal didn't say: ask and let it answer
+        if (modes.isEmpty()) return Ladder.steps(quality, RUNGS)
+        val lossless = "LOSSLESS" in modes || "HIRES_LOSSLESS" in modes
+        val hires = "HIRES_LOSSLESS" in modes
+        val stereo = "STEREO" in modes || "DOLBY_ATMOS" in modes || lossless
+        // the plan is a ceiling: ask for the best the song has, never less than the chip's floor
+        val steps = when (quality) {
+            "hires" -> when {
+                hires -> listOf("HI_RES_LOSSLESS", "LOSSLESS")
+                lossless -> listOf("LOSSLESS")
+                else -> listOf("HIGH", "LOW")
+            }
+            else -> Ladder.steps(quality, RUNGS)
+        }
+        return steps.filter { step ->
+            when {
+                step == "HI_RES_LOSSLESS" -> hires
+                step == "LOSSLESS" -> lossless
+                step == "HIGH" || step == "LOW" -> stereo
+                else -> true
+            }
+        }
+    }
 
     private fun one(host: ModuleHost, session: Session, trackId: String, step: String): Found? {
         val body = playback(host, session.tokenFor(step), trackId, step, session.country) ?: return null
@@ -223,11 +267,17 @@ internal object Tidal {
             codecs.contains("flac", ignoreCase = true) ->
                 Found(url = url, label = "CD · FLAC", codec = "FLAC", sampleRate = 44100)
             // the lossy tiers are mp4 audio, not aac-in-adts: the player needs the codec named right
-            step == "HIGH" -> Found(url = url, label = "AAC 320", codec = "AAC", sampleRate = 44100)
-            step == "LOW" -> Found(url = url, label = "AAC 96", codec = "AAC", sampleRate = 44100)
-            else -> Found(url = url, label = step, codec = "AAC", sampleRate = 44100)
+            // a lossy answer, named by the tier Tidal says it granted rather than by what was asked
+            else -> when (Json.text(body, "audioQuality")) {
+                "HIGH" -> Found(url = url, label = "AAC 320", codec = "AAC", sampleRate = 44100)
+                "LOW" -> Found(url = url, label = "AAC 96", codec = "AAC", sampleRate = 44100)
+                else -> Found(url = url, label = "AAC", codec = "AAC", sampleRate = 44100)
+            }
         }
     }
+
+    private fun trackRows(trackId: String, country: String): String =
+        "https://api.tidal.com/v1/tracks/$trackId?countryCode=${enc(country)}"
 
     private fun playback(host: ModuleHost, token: String, trackId: String, quality: String, country: String): Map<String, Any?>? {
         val url = "https://api.tidal.com/v1/tracks/$trackId/playbackinfopostpaywall" +
