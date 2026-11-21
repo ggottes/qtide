@@ -5,11 +5,13 @@
 #   RELEASE=1 KEYSTORE=… KS_PASS=… KEY_ALIAS=… ./build.sh
 set -e
 cd "$(dirname "$0")"
+# one value per build of this checkout, so mochy never reuses a code folder from an older one
+MODE=${MODE:-$(date -u +%Y%m%d%H%M)}
 . ./toolchain.sh
 
 build_one() {
   entry=$1        # com.qtide.QtideTidal
-  id=$2           # qtide-tidal
+  id=$2           # qtide-tidal-debug / qtide-tidal, the key mochy keeps code under
   name=$3
   description=$4
   resources=$5
@@ -21,7 +23,8 @@ build_one() {
   mkdir -p "$work/dex" "$work/apk/root"
 
   # only this module's class is the entry; the three share the sources, but the manifest names one
-  sed "s/com.qtide.ENTRY/$entry/" tools/AndroidManifest.xml > "$work/apk/root/AndroidManifest.xml"
+  # the mode is woven into the apk so a module cache from an earlier build can't be reused
+  sed -e "s/com.qtide.ENTRY/$entry/" -e "s|SWAP_ID|$id|" -e "s|SWAP_MODE|$MODE|"     tools/AndroidManifest.xml > "$work/apk/root/AndroidManifest.xml"
 
   "$D8" --release --min-api 26 --lib "$ANDROID_JAR" --output "$work/dex" \
     "$STDLIB" "$COROUTINES" "$SERJSON" "$SERCORE" $(find out-classes -name "*.class")
@@ -73,18 +76,21 @@ java -cp "$COMPILER_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
   -no-stdlib -no-reflect -jvm-target 17 -classpath "$LIBS" -d out-classes api module/src
 
 if [ "$RELEASE" = "1" ] && [ -n "$KEYSTORE" ]; then
+  ID_SUFFIX=
   TIDAL_OUT=qtide-tidal.mochyymodule.zip
   QOBUZ_OUT=qtide-qobuz.mochyymodule.zip
   DEEZER_OUT=qtide-deezer.mochyymodule.zip
 else
+  ID_SUFFIX=-debug
   TIDAL_OUT=qtide-tidal-debug.mochyymodule.zip
   QOBUZ_OUT=qtide-qobuz-debug.mochyymodule.zip
   DEEZER_OUT=qtide-deezer-debug.mochyymodule.zip
 fi
 
 echo "2/3 zips"
-build_one com.qtide.QtideTidal  qtide-tidal  "Qtide — Tidal"  "Tidal: your own account, lossless and hi-res where it has it" "search,stream" "$TIDAL_OUT"  assets/icons/icon-tidal.png
-build_one com.qtide.QtideQobuz  qtide-qobuz  "Qtide — Qobuz"  "Qobuz: your own account, FLAC up to 24-bit on a Studio plan" "search,stream" "$QOBUZ_OUT"  assets/icons/icon-qobuz.png
-build_one com.qtide.QtideDeezer qtide-deezer "Qtide — Deezer" "Deezer: your own account, FLAC on a HiFi plan" "search,stream" "$DEEZER_OUT"  assets/icons/icon-deezer.png
+# the key, not the manifest id: a debug and a release zip of the same module replace each other
+build_one com.qtide.QtideTidal  qtide-tidal${ID_SUFFIX}  "Qtide — Tidal"  "Tidal: your own account, lossless and hi-res where it has it" "search,stream" "$TIDAL_OUT"  assets/icons/icon-tidal.png
+build_one com.qtide.QtideQobuz  qtide-qobuz${ID_SUFFIX}  "Qtide — Qobuz"  "Qobuz: your own account, FLAC up to 24-bit on a Studio plan" "search,stream" "$QOBUZ_OUT"  assets/icons/icon-qobuz.png
+build_one com.qtide.QtideDeezer qtide-deezer${ID_SUFFIX} "Qtide — Deezer" "Deezer: your own account, FLAC on a HiFi plan" "search,stream" "$DEEZER_OUT"  assets/icons/icon-deezer.png
 
 echo "3/3 done"

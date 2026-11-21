@@ -3,7 +3,11 @@
     package="com.qtide.module" android:versionCode="1" android:versionName="1.2">
     <uses-permission android:name="android.permission.INTERNET" />
     <application android:label="Qtide module" android:hasCode="true">
-        <!-- ENTRY is swapped by build.sh: com.qtide.QtideTidal, QtideQobuz or QtideDeezer -->
+        <!-- ENTRY is swapped by build.sh: com.qtide.QtideTidal, QtideQobuz or QtideDeezer;
+             the id and the mode are swapped too, so mochy's module cache (module_data/<id>) is fresh
+             per module and per artwork version -->
         <meta-data android:name="com.mochyy.mochymusic.module.entry" android:value="com.qtide.ENTRY" />
+        <meta-data android:name="com.qtide.module.id" android:value="SWAP_ID" />
+        <meta-data android:name="com.qtide.module.mode" android:value="SWAP_MODE" />
     </application>
 </manifest>
