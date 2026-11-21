@@ -8,10 +8,8 @@ import java.net.URLEncoder
 /**
  * Deezer: the ARL cookie a signed-in deezer.com keeps, then the licence's own stream.
  *
- * The gateway only answers once the session has the site's own cookies, so the first call visits
- * deezer.com the way a browser would. Deezer's stream comes as 2048-byte slices with every third
- * one Blowfish-encrypted; that file is downloaded, decrypted and saved so the player gets one
- * ordinary mp3/flac. The 30-second preview is never used: when the account can't be given a full
+ * Deezer's stream comes as 2048-byte slices with every third one Blowfish-encrypted; that file is
+ * downloaded, decrypted and saved so the player gets one ordinary mp3/flac. The 30-second preview is never used: when the account can't be given a full
  * file, [lastReason] says which call refused and the song doesn't play.
  */
 internal object Deezer {
@@ -28,6 +26,7 @@ internal object Deezer {
 
     private class Session(
         val apiToken: String,
+        val plan: String,
         val licenseToken: String,
         val canLossless: Boolean,
         val canStream: Boolean,
@@ -38,6 +37,9 @@ internal object Deezer {
 
     private var session: Session? = null
     private var signedInAs: String? = null
+
+    /** the cookies to send with the arl: only the sid, which is where the csrf token is bound (see [open]) */
+    private val jar = LinkedHashMap<String, String>()
 
     /** why the last [stream] came back empty, as a sentence for the module's page */
     var lastReason = ""
@@ -58,41 +60,14 @@ internal object Deezer {
         jar.clear()
     }
 
-    /** whether the cookie is a real account's: Deezer's anonymous answer (user id 0) is a no */
-    fun check(host: ModuleHost, arl: String): Boolean {
+    /** the account's plan when the cookie is a real account's, null when Deezer answered as a guest */
+    fun check(host: ModuleHost, arl: String): String? {
         reset()
-        return open(host, arl) != null
+        return open(host, arl)?.plan
     }
 
     // ---- session --------------------------------------------------------------------------
 
-    private fun warmUp(host: ModuleHost) {
-        if (jar.isNotEmpty()) return
-        val res = host.http(HttpRequest("https://www.deezer.com/en/", headers = mapOf("User-Agent" to UA)))
-        if (!res.ok) return
-        takeCookies(res)
-    }
-
-    /**
-     * The site's cookies as a browser keeps them: one value per name, the newest wins.
-     *
-     * This matters more than it looks. The gateway's csrf token is bound to the session's `sid`, and
-     * an answer to `deezer.getUserData` carries a *new* sid. Appending that to the anonymous one the
-     * warm-up fetched leaves two `sid=...` in the header, and the gateway reads the first: every
-     * later call answers `Invalid CSRF token` and no `TRACK_TOKEN` ever arrives.
-     */
-    private val jar = LinkedHashMap<String, String>()
-
-    private fun takeCookies(res: com.mochyy.mochymusic.module.HttpResponse) {
-        val setCookie = res.header("set-cookie") ?: return
-        if (setCookie.isBlank()) return
-        setCookie.split("\n").forEach { line ->
-            val pair = line.substringBefore(";").trim()
-            val name = pair.substringBefore("=").trim()
-            val value = pair.substringAfter("=", "").trim()
-            if (name.isNotEmpty() && value.isNotEmpty()) jar[name] = value
-        }
-    }
 
     private fun cookieHeader(arl: String): String =
         "arl=" + arl + jar.entries.filter { it.key != "arl" }.joinToString("") { "; ${it.key}=${it.value}" }
@@ -102,11 +77,13 @@ internal object Deezer {
         if (signedInAs != arl) reset()
         session?.let { return it }
         if (arl.isBlank()) return null
-        warmUp(host)
         lastRefusal = ""
         val user = gateway(host, arl, "deezer.getUserData", null) ?: return null
         lastRefusal = Json.text(user, "VALID_TOKEN_REQUIRED").orEmpty()
         val token = Json.text(user, "checkForm") ?: return null
+        // the answer's SESSION_ID *is* the sid cookie, and the csrf token is bound to it. mochy's host
+        // keeps only the last Set-Cookie line, so the cookie never crosses the bridge: read it here.
+        Json.text(user, "SESSION_ID")?.takeIf { it.isNotBlank() }?.let { jar["sid"] = it }
         val profile = Json.objOf(user["USER"])
         // deezer answers a rejected ARL with its anonymous user, a usable token and streaming off:
         // user id 0 is the tell every other client checks, and without it a dead cookie looked signed in
@@ -122,6 +99,7 @@ internal object Deezer {
         val options = Json.objOf(profile?.get("OPTIONS"))
         val made = Session(
             apiToken = token,
+            plan = Json.text(user, "OFFER_NAME")?.replace("Deezer ", "").orEmpty().ifBlank { "Deezer" },
             licenseToken = Json.text(options, "license_token").orEmpty(),
             canLossless = Json.bool(options, "web_lossless") || Json.bool(options, "mobile_lossless"),
             canStream = Json.bool(options, "web_streaming") || Json.bool(options, "mobile_streaming") ||
@@ -161,8 +139,6 @@ internal object Deezer {
             lastRefusal = "HTTP ${response.code}"
             return null
         }
-        // the gateway hands out the sid its next csrf token is bound to
-        takeCookies(response)
         val body = Json.obj(response.text) ?: return null
         val errors = Json.objOf(body["error"])
         if (errors != null && errors.isNotEmpty()) {

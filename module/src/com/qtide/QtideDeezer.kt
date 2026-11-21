@@ -109,7 +109,10 @@ class QtideDeezer : SourceModule, ModuleFields, ModuleArt {
     override suspend fun verifyAccount(): AccountState {
         val arl = arl()
         if (arl.isNullOrBlank()) return AccountState.SignedOut
-        return if (Deezer.check(host, arl)) AccountState.SignedIn("Deezer") else AccountState.Expired("Deezer refused the ARL")
+        // the plan is the useful part: Free answers user 0, which is the whole Deezer problem in one line
+        val plan = Deezer.check(host, arl)
+            ?: return AccountState.Expired(Deezer.lastReason.ifBlank { "Deezer refused the ARL" })
+        return AccountState.SignedIn("Deezer · $plan")
     }
 
     override fun signOut() {
