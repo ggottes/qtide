@@ -163,7 +163,7 @@ class QtideQobuz : SourceModule, ModuleFields, ModuleArt {
             Source.Qobuz(token, host.storage.get("appPair").orEmpty()),
             host::folder,
         )
-        val found = source.find(track, picks["quality"] ?: "lossless") { step ->
+        val found = source.find(track, picks["quality"] ?: "hires") { step ->
             report(DiagnosticStep(step.name, step.ok, step.detail))
         } ?: return ResolveResult.NotFound(source.problem())
 

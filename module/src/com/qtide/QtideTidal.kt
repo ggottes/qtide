@@ -135,7 +135,7 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
     ): ResolveResult {
         val tidal = Source.Tidal(token().orEmpty()) { host.storage.set("refreshToken", it) }
         val source = SourceRunner(host, tidal, host::folder)
-        val found = source.find(track, picks["quality"] ?: "lossless") { step ->
+        val found = source.find(track, picks["quality"] ?: "hires") { step ->
             report(DiagnosticStep(step.name, step.ok, step.detail))
         } ?: return if (tidal.signedOut()) {
             ResolveResult.Unavailable(source.problem())
@@ -144,7 +144,7 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
         }
 
         val stream = found.stream
-        val picked = picks["quality"] ?: "lossless"
+        val picked = picks["quality"] ?: "hires"
         lastLabel = describe(picked, stream.label)
         return ResolveResult.Found(
             SourceStream(
