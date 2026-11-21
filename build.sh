@@ -14,6 +14,7 @@ build_one() {
   description=$4
   resources=$5
   out=$6          # qtide-debug.mochyymodule.zip
+  icon=$7         # this service's icon, at the zip root
 
   work="work/$id"
   rm -rf "$work"
@@ -48,9 +49,9 @@ build_one() {
   )
 
   mkdir -p build
-  "$PYTHON" -I - "$work/apk/module.apk" "build/$out" "$id" "$name" "$description" "$resources" <<'PY'
+  "$PYTHON" -I - "$work/apk/module.apk" "build/$out" "$id" "$name" "$description" "$resources" "$icon" <<'PY'
 import json, sys, zipfile
-apk, out, mid, name, desc, resources = sys.argv[1:7]
+apk, out, mid, name, desc, resources, icon = sys.argv[1:8]
 manifest = {
     "id": mid, "name": name, "version": "1.3", "author": "geisselgottes",
     "description": desc, "resources": [r for r in resources.split(",") if r], "code": "module.apk",
@@ -60,8 +61,8 @@ manifest = {
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
     z.write(apk, "module.apk")
-    z.write("assets/icon.png", "icon.png")
-    z.write("assets/banner.png", "banner.png")
+    z.write(icon, "icon.png")
+    z.write("assets/banner/banner.png", "banner.png")
 PY
   echo "built build/$out"
 }
@@ -82,8 +83,8 @@ else
 fi
 
 echo "2/3 zips"
-build_one com.qtide.QtideTidal  qtide-tidal  "Qtide — Tidal"  "Tidal: your own account, lossless and hi-res where it has it" "search,stream" "$TIDAL_OUT"
-build_one com.qtide.QtideQobuz  qtide-qobuz  "Qtide — Qobuz"  "Qobuz: your own account, FLAC up to 24-bit on a Studio plan" "search,stream" "$QOBUZ_OUT"
-build_one com.qtide.QtideDeezer qtide-deezer "Qtide — Deezer" "Deezer: your own account, FLAC on a HiFi plan" "search,stream" "$DEEZER_OUT"
+build_one com.qtide.QtideTidal  qtide-tidal  "Qtide — Tidal"  "Tidal: your own account, lossless and hi-res where it has it" "search,stream" "$TIDAL_OUT"  assets/icons/icon-tidal.png
+build_one com.qtide.QtideQobuz  qtide-qobuz  "Qtide — Qobuz"  "Qobuz: your own account, FLAC up to 24-bit on a Studio plan" "search,stream" "$QOBUZ_OUT"  assets/icons/icon-qobuz.png
+build_one com.qtide.QtideDeezer qtide-deezer "Qtide — Deezer" "Deezer: your own account, FLAC on a HiFi plan" "search,stream" "$DEEZER_OUT"  assets/icons/icon-deezer.png
 
 echo "3/3 done"

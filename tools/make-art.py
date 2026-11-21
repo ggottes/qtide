@@ -15,7 +15,8 @@ import sys
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "..", "assets")
+# the real artwork is hand-made into assets/banner and assets/icons; this draws the fallbacks
+OUT = os.path.join(HERE, "..", "assets", "fallback")
 
 INK = (8, 11, 14)          # near black, mochy's own page
 TEAL = (0, 214, 190)       # the accent the page's tint is taken from
