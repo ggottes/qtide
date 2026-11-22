@@ -50,8 +50,12 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
     override val icon: String? get() = Art.icon("tidal")
     override val banner: String? get() = Art.BANNER
 
-    override val signIn = SignInSpec(
-        startUrl = "https://link.tidal.com/",
+    // the page mochy opens is the one with the code in the address, like tiddl prints: pressing Sign
+    // in before the code exists lands on a bare link.tidal.com that asks for one
+    override val signIn get() = SignInSpec(
+        // read before attach by mochy's open(): null there, and link.tidal.com/ until a code exists
+        startUrl = if (::host.isInitialized) Tidal.pendingLink(host) ?: "https://link.tidal.com/"
+        else "https://link.tidal.com/",
         origins = listOf("https://link.tidal.com", "https://tidal.com", "https://login.tidal.com"),
         sessionOrigins = setOf("https://link.tidal.com"),
         desktopSite = false,
@@ -68,12 +72,14 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
                 hint = "Optional: a session's refresh token",
                 // this line is the only place on the page a module can say something new: the sign-in
                 // code goes here, because link.tidal.com won't open until a code exists
-                description = pending()?.let { "Enter code $it at link.tidal.com, then turn this off and on." }
-                    ?: "Turn Link on to get a code for link.tidal.com. That is also what turns the module on.",
+                description = "Optional. Signing in above fills this; pasting a refresh token works too.",
             ),
             ModuleField(
                 id = "link",
-                label = "Link with Tidal: switch on for a code",
+                // a toggle's description never shows, but its label does, and it is redrawn on the
+                // refresh that follows the switch — the one text that can carry the code
+                label = pending()?.let { "Code $it at link.tidal.com" }
+                    ?: "Link with Tidal: switch on for a code",
                 kind = FieldKind.Toggle,
                 default = "false",
             ),
@@ -83,11 +89,10 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
         // a blank box means "nothing typed", not "forget what the browser found"
         values["refreshToken"]?.trim()?.takeIf { it.isNotEmpty() }?.let { host.storage.set("refreshToken", it) }
         // the switch is a request for a fresh code, and the module hears it on its own thread
-        if (values["link"].equals("true", ignoreCase = true) && host.storage.get("linkAsked") != "true") {
-            host.storage.set("linkAsked", "true")
+        if (values["link"].equals("true", ignoreCase = true)) {
             Tidal.beginDevice(host, fresh = true)
+            host.log("Tidal: link code " + host.storage.get("deviceUserCode"))
         }
-        if (values["link"].equals("false", ignoreCase = true)) host.storage.set("linkAsked", "false")
         runner = null
     }
 

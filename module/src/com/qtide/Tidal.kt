@@ -40,6 +40,7 @@ internal object Tidal {
     private const val PENDING_USER = "deviceUserCode"
     private const val PENDING_UNTIL = "deviceExpiresAt"
     private const val PENDING_TRIED = "deviceRequestedAt"
+    private const val PENDING_LINK = "deviceLink"
 
     /** the steps each chip asks for, best first */
     private val RUNGS = mapOf(
@@ -129,8 +130,15 @@ internal object Tidal {
         host.storage.set(PENDING_CODE, device)
         host.storage.set(PENDING_USER, code)
         host.storage.set(PENDING_UNTIL, "${now + ttl}")
+        // what python-tidal and tiddl show: the page with the code already in it, so nothing is typed
+        Json.text(answer, "verificationUriComplete")?.takeIf { it.isNotBlank() }?.let { link ->
+            host.storage.set(PENDING_LINK, if (link.startsWith("http")) link else "https://$link")
+        }
         return code
     }
+
+    /** the link.tidal.com page for the pending code, with the code already in the address */
+    fun pendingLink(host: ModuleHost): String? = host.storage.get(PENDING_LINK)
 
     /** one poll of a pending device login: the refresh token once the user approved it, null while waiting */
     fun pollDevice(host: ModuleHost): String? {
@@ -168,7 +176,7 @@ internal object Tidal {
     }
 
     fun forget(host: ModuleHost) {
-        listOf(PENDING_CODE, PENDING_USER, PENDING_UNTIL, PENDING_TRIED).forEach { host.storage.set(it, null) }
+        listOf(PENDING_CODE, PENDING_USER, PENDING_UNTIL, PENDING_TRIED, PENDING_LINK).forEach { host.storage.set(it, null) }
     }
 
     // ---- search ---------------------------------------------------------------------------
