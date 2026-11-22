@@ -53,14 +53,22 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
     // the page mochy opens is the one with the code in the address, like tiddl prints: pressing Sign
     // in before the code exists lands on a bare link.tidal.com that asks for one
     override val signIn get() = SignInSpec(
-        // read before attach by mochy's open(): null there, and link.tidal.com/ until a code exists
-        startUrl = if (::host.isInitialized) Tidal.pendingLink(host) ?: "https://link.tidal.com/"
-        else "https://link.tidal.com/",
-        origins = listOf("https://link.tidal.com", "https://tidal.com", "https://login.tidal.com"),
-        sessionOrigins = setOf("https://link.tidal.com"),
+        // the helper page makes the code and does the whole device login; it ends with the refresh
+        // token in a copy box, which is pasted into the field. mochy's sheet shows a URL it can load,
+        // so a page is what the sign-in pill needs — the module never gets to run code first.
+        startUrl = Tidal.helperPage(),
+        // both the helper's redirect and Tidal's own pages have to be allowed, or the sheet closes
+        // on the first hop away from github.io
+        origins = listOf(
+            "https://ggottes.github.io",
+            "https://link.tidal.com",
+            "https://tidal.com",
+            "https://login.tidal.com",
+        ),
+        sessionOrigins = setOf("https://ggottes.github.io"),
         desktopSite = false,
         title = "Sign in to Tidal",
-        subtitle = "Log in, then approve the code Qtide shows when you press play",
+        subtitle = "Approve the code, copy the key it gives you, paste it on the module's page",
     )
 
     override val fields: List<ModuleField>
@@ -70,8 +78,8 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
                 label = "Tidal refresh token",
                 kind = FieldKind.Text,
                 hint = "Optional: a session's refresh token",
-                description = "A fresh install: tap a song in the test row and that step gives you a " +
-                    "code for link.tidal.com. Or paste a refresh token here.",
+                description = "Press Sign in: that page gets a Tidal code, and copies the key into " +
+                    "this field when you approve it. A refresh token from tiddl works here too.",
             ),
         )
 
@@ -117,8 +125,6 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
      * token, which is the same slot the field writes.
      */
     override suspend fun verifyAccount(): AccountState {
-        // the browser on link.tidal.com asks for a code, so one is made as soon as the page's check
-        // is pressed: the user is standing in the sign-in with nothing to type otherwise
         Tidal.pollDevice(host)?.let { host.storage.set("refreshToken", it) }
         val token = token()
         if (token.isNullOrBlank()) {

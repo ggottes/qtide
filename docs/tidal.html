@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qtide — Tidal sign-in</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #07090b;
+    background-image: radial-gradient(130% 110% at 78% 30%, #12222a 0%, #07090b 72%);
+    font: 16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; color: #eef6f5; padding: 24px;
+    box-sizing: border-box;
+  }
+  main { width: 100%; max-width: 460px; }
+  .brand { text-align: center; margin-bottom: 28px; }
+  .brand img { width: 240px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p.lede { margin: 0 0 22px; color: #9fb4b2; font-size: 14px; }
+  .step { display: none; }
+  .step.on { display: block; }
+  button, a.button {
+    display: block; width: 100%; box-sizing: border-box; text-align: center; text-decoration: none;
+    border: 0; border-radius: 14px; padding: 15px 18px; font-size: 16px; font-weight: 600;
+    background: #00d6be; color: #04100e; cursor: pointer;
+  }
+  button.secondary { background: rgba(255,255,255,.08); color: #eef6f5; }
+  button:disabled { opacity: .5; cursor: default; }
+  code.code {
+    display: block; text-align: center; font: 700 34px/1.2 ui-monospace, Menlo, monospace;
+    letter-spacing: 6px; padding: 18px; border-radius: 14px; background: rgba(255,255,255,.07);
+    margin: 14px 0;
+  }
+  textarea {
+    width: 100%; box-sizing: border-box; min-height: 96px; resize: none; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.16); background: #0d1418; color: #eef6f5;
+    font: 12px/1.4 ui-monospace, Menlo, monospace; padding: 12px; word-break: break-all;
+  }
+  .muted { color: #9fb4b2; font-size: 13px; }
+  .err { color: #ff9b9b; font-size: 14px; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid rgba(0,0,0,.25); border-top-color: #04100e; animation: spin .8s linear infinite;
+    vertical-align: -2px; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><img alt="Qtide" src="../assets/banner/banner.png"></div>
+
+  <section id="step-start" class="step on">
+    <h1>Sign in to Tidal</h1>
+    <p class="lede">Your Tidal account plays in Mochy through Qtide. This page asks Tidal for a
+      device code, you approve it, and it gives you a key to paste on the module's page.</p>
+    <button id="go">Get a Tidal code</button>
+  </section>
+
+  <section id="step-code" class="step">
+    <h1>Approve this code</h1>
+    <p class="lede">Type it at link.tidal.com, or press the button — it opens the page with the code
+      already in it. Keep this tab open.</p>
+    <code class="code" id="code">······</code>
+    <a class="button" id="open" target="_blank" rel="noopener">Open link.tidal.com</a>
+    <p class="muted" id="wait"><span class="spinner"></span>Waiting for you to approve…</p>
+    <p class="err" id="code-err" hidden></p>
+  </section>
+
+  <section id="step-key" class="step">
+    <h1>You're in</h1>
+    <p class="lede">Copy this key, then go back to Mochy and paste it into <b>Tidal refresh token</b>.</p>
+    <textarea id="key" readonly></textarea>
+    <p style="margin:14px 0 0"><button id="copy">Copy the key</button></p>
+    <p class="muted" id="copied" hidden>Copied — paste it on the module's page.</p>
+  </section>
+
+  <section id="step-error" class="step">
+    <h1>That didn't work</h1>
+    <p class="err" id="error"></p>
+    <p style="margin:18px 0 0"><button class="secondary" id="again">Try again</button></p>
+  </section>
+</main>
+<script>
+// The same public client pair Qtide's Tidal module uses. A device code here is the same code the
+// module would have made, so the key works there without anything else being asked.
+const CLIENT_ID = '4N3n6Q1x95LL5K7p';
+const AUTH = 'https://auth.tidal.com/v1/oauth2';
+const SCOPE = 'r_usr w_usr w_sub';
+
+const $ = (id) => document.getElementById(id);
+function show(step) {
+  for (const s of document.querySelectorAll('.step')) s.classList.toggle('on', s.id === step);
+}
+function fail(message) {
+  $('error').textContent = message;
+  show('step-error');
+}
+
+async function json(url, init) {
+  const res = await fetch(url, init);
+  const text = await res.text();
+  let body = null;
+  try { body = JSON.parse(text); } catch (e) {}
+  return { ok: res.ok, status: res.status, body: body, text: text };
+}
+
+let timer = null;
+
+async function start() {
+  show('step-code');
+  $('code').textContent = '······';
+  $('code-err').hidden = true;
+  clearTimeout(timer);
+
+  const started = await json(`${AUTH}/device_authorization`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: CLIENT_ID, scope: SCOPE }).toString(),
+  }).catch(() => null);
+
+  const b = started && started.body;
+  if (!b || !b.deviceCode || !b.userCode) {
+    fail('Tidal did not give out a code. Try again in a minute.');
+    return;
+  }
+
+  $('code').textContent = b.userCode;
+  const link = String(b.verificationUriComplete || 'link.tidal.com/' + b.userCode);
+  $('open').href = /^https?:/.test(link) ? link : 'https://' + link;
+
+  // Tidal answers authorization_pending until the user approves; the code lives ~5 minutes
+  const until = Date.now() + (b.expiresIn || 300) * 1000;
+  const interval = Math.max(2, b.interval || 2) * 1000;
+
+  const poll = async () => {
+    if (Date.now() > until) {
+      $('code-err').textContent = 'The code ran out. Press Try again for a new one.';
+      $('code-err').hidden = false;
+      $('wait').hidden = true;
+      return;
+    }
+    const answer = await json(`${AUTH}/token`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        authorization: 'Basic ' + btoa(CLIENT_ID + ':'),
+      },
+      body: new URLSearchParams({
+        client_id: CLIENT_ID,
+        device_code: b.deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        scope: SCOPE,
+      }).toString(),
+    }).catch(() => null);
+
+    const body = answer && answer.body;
+    if (body && body.access_token && body.refresh_token) {
+      $('key').value = body.refresh_token;
+      show('step-key');
+      return;
+    }
+    const error = body && body.error;
+    if (error === 'expired_token' || error === 'access_denied') {
+      $('code-err').textContent = error === 'access_denied'
+        ? 'Tidal refused the approval. Try again.'
+        : 'The code ran out. Press Try again for a new one.';
+      $('code-err').hidden = false;
+      $('wait').hidden = true;
+      return;
+    }
+    timer = setTimeout(poll, interval);
+  };
+  timer = setTimeout(poll, interval);
+}
+
+$('go').addEventListener('click', start);
+$('again').addEventListener('click', () => { show('step-start'); });
+$('copy').addEventListener('click', async () => {
+  const key = $('key').value;
+  try { await navigator.clipboard.writeText(key); } catch (e) {
+    $('key').select(); document.execCommand && document.execCommand('copy');
+  }
+  $('copied').hidden = false;
+});
+</script>
+</body>
+</html>

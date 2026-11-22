@@ -137,6 +137,16 @@ internal object Tidal {
         return code
     }
 
+    // ---- the github pages helper ------------------------------------------------------------
+    //
+    // Signed out, mochy gives a module no button and no test row, so the module can't ask Tidal for a
+    // code at all. A page can: it makes the code and the user approves it there. The helper sends the
+    // refresh token back in the #fragment (never in a query string, so it isn't logged), and the
+    // module reads it on the first poll-or-import after the sheet closes.
+    private const val HELPER = "https://ggottes.github.io/qtide/tidal.html"
+
+    fun helperPage(): String = HELPER
+
     /** the link.tidal.com page for the pending code, with the code already in the address */
     fun pendingLink(host: ModuleHost): String? = host.storage.get(PENDING_LINK)
 
