@@ -99,4 +99,6 @@ build_one com.qtide.QtideTidal  qtide-tidal${SUFFIX}  "Qtide — Tidal"  "Tidal:
 build_one com.qtide.QtideQobuz  qtide-qobuz${SUFFIX}  "Qtide — Qobuz"  "Qobuz: your own account, FLAC up to 24-bit on a Studio plan" "search,stream" "$QOBUZ_OUT"  assets/icons/icon-qobuz.png
 build_one com.qtide.QtideDeezer qtide-deezer${SUFFIX} "Qtide — Deezer" "Deezer: your own account, FLAC on a HiFi plan" "search,stream" "$DEEZER_OUT"  assets/icons/icon-deezer.png
 
-echo "3/3 done"
+# the sign-in helper, next to the zips: a phone can open it straight from the chat, no site needed
+cp docs/tidal.html build/tidal.html
+echo "3/3 done (build/tidal.html is the Tidal sign-in page)"
