@@ -1,7 +1,7 @@
 # builds both zips on every push and attaches them to a release when a tag is pushed.
 #
 #   push → artifacts: the three debug zips (release zips need the RELEASE_KEYSTORE secret)
-#   tag v1.2 → a GitHub release with qtide-{tidal,qobuz,deezer}[-debug].mochyymodule.zip
+#   tag v1.4 → a GitHub release with qtide-{tidal,qobuz,deezer}[-debug].mochyymodule.zip
 name: build
 
 on:
