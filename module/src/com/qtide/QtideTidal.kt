@@ -59,15 +59,19 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
         subtitle = "Log in, then approve the code Qtide shows when you press play",
     )
 
-    override val fields = listOf(
-        ModuleField(
-            id = "refreshToken",
-            label = "Tidal refresh token",
-            kind = FieldKind.Text,
-            hint = "Optional: a session's refresh token",
-            description = "Sign in above, or paste a refresh token here.",
-        ),
-    )
+    override val fields: List<ModuleField>
+        get() = listOf(
+            ModuleField(
+                id = "refreshToken",
+                label = "Tidal refresh token",
+                kind = FieldKind.Text,
+                hint = "Optional: a session's refresh token",
+                // this line is the only place on the page a module can say something new: the sign-in
+                // code goes here, because link.tidal.com won't open until a code exists
+                description = pending()?.let { "Enter code $it at link.tidal.com, then press Check." }
+                    ?: "Press Check to get a code for link.tidal.com, or paste a refresh token here.",
+            ),
+        )
 
     override fun onFields(values: Map<String, String>) {
         // a blank box means "nothing typed", not "forget what the browser found"
@@ -93,6 +97,9 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
     /** what the last stream really was, in the module's own words, for the player's stream info */
     @Volatile private var lastLabel: String? = null
 
+    private fun pending(): String? =
+        host.storage.get("deviceUserCode")?.takeIf { host.storage.get("refreshToken").isNullOrBlank() }
+
     override fun accountState(): AccountState = when {
         token().isNullOrBlank() -> AccountState.SignedOut
         // the country is known once the module has signed in; the last played tier until then
@@ -110,9 +117,14 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
      * token, which is the same slot the field writes.
      */
     override suspend fun verifyAccount(): AccountState {
+        // the browser on link.tidal.com asks for a code, so one is made as soon as the page's check
+        // is pressed: the user is standing in the sign-in with nothing to type otherwise
         Tidal.pollDevice(host)?.let { host.storage.set("refreshToken", it) }
         val token = token()
-        if (token.isNullOrBlank()) return AccountState.SignedOut
+        if (token.isNullOrBlank()) {
+            Tidal.beginDevice(host) ?: return AccountState.Expired("Tidal wouldn't hand out a code")
+            return AccountState.SignedOut
+        }
         val session = Tidal.login(host, token)
             ?: return AccountState.Expired("Tidal refused the saved sign-in")
         host.storage.set("country", session.country)
