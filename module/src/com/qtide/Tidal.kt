@@ -103,7 +103,8 @@ internal object Tidal {
      *
      * The code is remembered for its five minutes, so pressing play twice doesn't mint a second one.
      */
-    fun beginDevice(host: ModuleHost): String? {
+    fun beginDevice(host: ModuleHost, fresh: Boolean = false): String? {
+        if (fresh) forget(host)
         val asked = host.storage.get(PENDING_TRIED)?.toLongOrNull()
         val until = host.storage.get(PENDING_UNTIL)?.toLongOrNull()
         val user = host.storage.get(PENDING_USER)

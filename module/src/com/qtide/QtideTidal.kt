@@ -68,14 +68,26 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
                 hint = "Optional: a session's refresh token",
                 // this line is the only place on the page a module can say something new: the sign-in
                 // code goes here, because link.tidal.com won't open until a code exists
-                description = pending()?.let { "Enter code $it at link.tidal.com, then come back." }
-                    ?: "Play any song first: Tidal puts the link code in the test row.",
+                description = pending()?.let { "Enter code $it at link.tidal.com, then turn this off and on." }
+                    ?: "Turn Link on to get a code for link.tidal.com. That is also what turns the module on.",
+            ),
+            ModuleField(
+                id = "link",
+                label = "Link with Tidal: switch on for a code",
+                kind = FieldKind.Toggle,
+                default = "false",
             ),
         )
 
     override fun onFields(values: Map<String, String>) {
         // a blank box means "nothing typed", not "forget what the browser found"
         values["refreshToken"]?.trim()?.takeIf { it.isNotEmpty() }?.let { host.storage.set("refreshToken", it) }
+        // the switch is a request for a fresh code, and the module hears it on its own thread
+        if (values["link"].equals("true", ignoreCase = true) && host.storage.get("linkAsked") != "true") {
+            host.storage.set("linkAsked", "true")
+            Tidal.beginDevice(host, fresh = true)
+        }
+        if (values["link"].equals("false", ignoreCase = true)) host.storage.set("linkAsked", "false")
         runner = null
     }
 
