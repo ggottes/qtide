@@ -57,8 +57,7 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
         // token in a copy box, which is pasted into the field. mochy's sheet shows a URL it can load,
         // so a page is what the sign-in pill needs — the module never gets to run code first.
         startUrl = Tidal.helperPage(),
-        // both the helper's redirect and Tidal's own pages have to be allowed, or the sheet closes
-        // on the first hop away from github.io
+        // the helper page and Tidal's own pages: a hop outside these closes the sheet
         origins = listOf(
             "https://ggottes.github.io",
             "https://link.tidal.com",
@@ -124,6 +123,23 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
      * Finishes a device login the user approved at link.tidal.com: one poll stores the refresh
      * token, which is the same slot the field writes.
      */
+    /**
+     * The helper page reports the refresh token as `authorization: Bearer …` to its own address, and
+     * that is one of the few headers Mochy's sign-in browser forwards to a module. Taking it here is
+     * what closes the sheet by itself and fills the field: no copying, no second press.
+     */
+    override fun onSignInHeader(name: String, value: String, url: String): Boolean {
+        if (!name.equals("authorization", ignoreCase = true)) return false
+        val token = value.trim().removePrefix("Bearer ").removePrefix("bearer ").trim()
+        if (token.length < 40) return false
+        host.storage.set("refreshToken", token)
+        host.storage.set("deviceUserCode", null)
+        Tidal.forget(host)
+        runner = null
+        host.log("Tidal: signed in from the helper page")
+        return true
+    }
+
     override suspend fun verifyAccount(): AccountState {
         Tidal.pollDevice(host)?.let { host.storage.set("refreshToken", it) }
         val token = token()

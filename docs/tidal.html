@@ -68,7 +68,8 @@
 
   <section id="step-key" class="step">
     <h1>You're in</h1>
-    <p class="lede">Copy this key, then go back to Mochy and paste it into <b>Tidal refresh token</b>.</p>
+    <p class="lede">Mochy takes it by itself and closes this page in a moment. If it doesn't, copy
+      the key and paste it into <b>Tidal refresh token</b> on the module's page.</p>
     <textarea id="key" readonly></textarea>
     <p style="margin:14px 0 0"><button id="copy">Copy the key</button></p>
     <p class="muted" id="copied" hidden>Copied — paste it on the module's page.</p>
@@ -157,6 +158,7 @@ async function start() {
     if (body && body.access_token && body.refresh_token) {
       $('key').value = body.refresh_token;
       show('step-key');
+      handOver(body.refresh_token);
       return;
     }
     const error = body && body.error;
@@ -171,6 +173,19 @@ async function start() {
     timer = setTimeout(poll, interval);
   };
   timer = setTimeout(poll, interval);
+}
+
+// Mochy's sign-in browser reports the authorization header of requests its pages make, which is how
+// its own modules close their sign-in sheet. Sending the token that way is what lets the sheet fill
+// itself in and close; the copy box is for when this page is opened on its own in a browser.
+function handOver(token) {
+  const beat = () => fetch(location.pathname + '?hand-over', {
+    method: 'GET',
+    headers: { authorization: 'Bearer ' + token },
+    cache: 'no-store',
+  }).catch(() => {});
+  beat();
+  setTimeout(beat, 800);
 }
 
 $('go').addEventListener('click', start);
