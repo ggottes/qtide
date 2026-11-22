@@ -68,8 +68,8 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
                 hint = "Optional: a session's refresh token",
                 // this line is the only place on the page a module can say something new: the sign-in
                 // code goes here, because link.tidal.com won't open until a code exists
-                description = pending()?.let { "Enter code $it at link.tidal.com, then press Check." }
-                    ?: "Press Check to get a code for link.tidal.com, or paste a refresh token here.",
+                description = pending()?.let { "Enter code $it at link.tidal.com, then come back." }
+                    ?: "Play any song first: Tidal puts the link code in the test row.",
             ),
         )
 
