@@ -70,18 +70,8 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
                 label = "Tidal refresh token",
                 kind = FieldKind.Text,
                 hint = "Optional: a session's refresh token",
-                // this line is the only place on the page a module can say something new: the sign-in
-                // code goes here, because link.tidal.com won't open until a code exists
-                description = "Optional. Signing in above fills this; pasting a refresh token works too.",
-            ),
-            ModuleField(
-                id = "link",
-                // a toggle's description never shows, but its label does, and it is redrawn on the
-                // refresh that follows the switch — the one text that can carry the code
-                label = pending()?.let { "Code $it at link.tidal.com" }
-                    ?: "Link with Tidal: switch on for a code",
-                kind = FieldKind.Toggle,
-                default = "false",
+                description = "A fresh install: tap a song in the test row and that step gives you a " +
+                    "code for link.tidal.com. Or paste a refresh token here.",
             ),
         )
 
@@ -89,10 +79,6 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
         // a blank box means "nothing typed", not "forget what the browser found"
         values["refreshToken"]?.trim()?.takeIf { it.isNotEmpty() }?.let { host.storage.set("refreshToken", it) }
         // the switch is a request for a fresh code, and the module hears it on its own thread
-        if (values["link"].equals("true", ignoreCase = true)) {
-            Tidal.beginDevice(host, fresh = true)
-            host.log("Tidal: link code " + host.storage.get("deviceUserCode"))
-        }
         runner = null
     }
 
@@ -113,9 +99,6 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
 
     /** what the last stream really was, in the module's own words, for the player's stream info */
     @Volatile private var lastLabel: String? = null
-
-    private fun pending(): String? =
-        host.storage.get("deviceUserCode")?.takeIf { host.storage.get("refreshToken").isNullOrBlank() }
 
     override fun accountState(): AccountState = when {
         token().isNullOrBlank() -> AccountState.SignedOut
@@ -162,6 +145,20 @@ class QtideTidal : SourceModule, ModuleFields, ModuleArt {
         picks: Map<String, String>,
         report: (DiagnosticStep) -> Unit,
     ): ResolveResult {
+        val signedOut = token().isNullOrBlank()
+        if (signedOut) {
+            // the test row is the one call a signed-out page can make, and it runs off the main
+            // thread, so this is where the device code is asked for
+            val code = Tidal.beginDevice(host)
+            report(
+                DiagnosticStep(
+                    "Sign in", code != null,
+                    if (code != null) "Enter code $code at link.tidal.com, then press Test again"
+                    else "Tidal wouldn't hand out a sign-in code",
+                ),
+            )
+            if (code != null) return ResolveResult.Unavailable("Waiting for the Tidal sign-in")
+        }
         val tidal = Source.Tidal(token().orEmpty()) { host.storage.set("refreshToken", it) }
         val source = SourceRunner(host, tidal, host::folder)
         val found = source.find(track, picks["quality"] ?: "hires") { step ->
