@@ -136,6 +136,12 @@ internal object Qobuz {
         for (format in Ladder.steps(quality, RUNGS)) {
             for (secret in session.secrets) {
                 one(host, session, secret, trackId, format.toInt())?.let { return it }
+                // a bad app id or a missing parameter fails for every secret and tier alike, so it is
+                // the one thing worth stopping on; a bad signature just means try the next secret
+                if (lastRefusal.contains("app_id", ignoreCase = true)) {
+                    lastRefusal = "Qobuz refused the request: " + lastRefusal
+                    return null
+                }
             }
         }
         return null
@@ -145,9 +151,14 @@ internal object Qobuz {
         val ts = System.currentTimeMillis() / 1000
         val signed = "trackgetFileUrlformat_id${format}intentstreamtrack_id$trackId$ts"
         val sig = md5(signed + secret)
+        lastRefusal = ""
         val body = call(
             host, "track/getFileUrl",
             mapOf(
+                // getFileUrl wants the app id in the query as well as in the header: without it the
+                // gateway answers 400 "Invalid or missing app_id parameter" and no key is ever made,
+                // which the ladder then spends every secret and tier on
+                "app_id" to session.appId,
                 "request_ts" to "$ts",
                 "request_sig" to sig,
                 "track_id" to trackId,
@@ -157,9 +168,15 @@ internal object Qobuz {
             session.userToken,
         ) ?: return null
         val url = Json.text(body, "url") ?: return null
-        val bits = Json.long(body, "bit_depth")?.toInt() ?: if (format == 6) 16 else 24
-        val rate = Json.long(body, "sampling_rate")?.toInt() ?: if (format == 6) 44100 else 96000
-        return Found(url, "$bits-bit · ${rate / 1000} kHz · FLAC", "FLAC", rate)
+        lastRefusal = ""
+        // the depth is a hint the API may leave out; the tier that answered says which it is
+        val bits = Json.long(body, "bit_depth")?.toInt()?.takeIf { it > 0 } ?: if (format == 6) 16 else 24
+        // qobuz answers in kHz ("44.1"), not Hz: a 44.1 read as Hz became "0 kHz"
+        val raw = Json.long(body, "sampling_rate")?.toInt() ?: if (format == 6) 44 else 96
+        val rate = if (raw < 1000) raw * 1000 else raw
+        // 44.1 and 88.2 are real rates and integer division rounded them down to "44" and "88"
+        val khz = if (rate % 1000 == 0) "${rate / 1000}" else String.format(java.util.Locale.US, "%.1f", rate / 1000.0)
+        return Found(url, "$bits-bit · $khz kHz · FLAC", "FLAC", rate)
     }
 
     // ---- plumbing -------------------------------------------------------------------------
@@ -170,7 +187,12 @@ internal object Qobuz {
         params["app_id"]?.let { headers["X-App-Id"] = it }
         val response = host.http(HttpRequest("$API/$endpoint?$qs", headers = headers))
         lastCode = response.code
-        if (!response.ok) return null
+        if (!response.ok) {
+            // qobuz's reason travels in the body, and "Invalid signature" vs "not in your plan" are
+            // worth telling apart on the page
+            lastRefusal = response.text.take(160).split(" ").joinToString(" ")
+            return null
+        }
         return Json.obj(response.text)
     }
 

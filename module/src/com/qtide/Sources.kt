@@ -195,7 +195,7 @@ internal class SourceRunner(
             // stopped here rather than by mochy, so the sentence survives to the page
             lastProblem = "${source.label} was still working after ${budgetMs / 1000} s" +
                 (source.timings.takeIf { it.isNotBlank() }?.let { " — $it" } ?: "") +
-                ". A smaller file plays on a slow line: pick High."
+                (source.reason.takeIf { it.isNotBlank() }?.let { " — $it" } ?: "")
             report(Step("Stream", false, lastProblem))
             return null
         }
