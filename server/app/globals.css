@@ -1,0 +1,24 @@
+:root { color-scheme: dark; --ink:#07090b; --soft:#9fb4b2; --teal:#00d6be; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; background: var(--ink);
+  background-image: radial-gradient(130% 110% at 78% 20%, #12222a 0%, #07090b 72%);
+  color: #eef6f5; font: 16px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 620px; margin: 0 auto; padding: 40px 20px 64px; }
+h1 { font-size: 24px; margin: 0 0 6px; }
+h2 { font-size: 16px; margin: 28px 0 10px; }
+p.lede { color: var(--soft); font-size: 14px; margin: 0 0 20px; }
+.card { background: rgba(255,255,255,.05); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+input, textarea { width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,.15); background: #0d1418; color: inherit; padding: 11px 12px; font: inherit; font-size: 14px; }
+input[type=checkbox] { width: auto; }
+button { border: 0; border-radius: 12px; padding: 12px 18px; font-weight: 600; background: var(--teal); color: #04100e; cursor: pointer; font-size: 15px; }
+button.ghost { background: rgba(255,255,255,.08); color: #eef6f5; }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.muted { color: var(--soft); font-size: 13px; }
+.err { color: #ff9b9b; font-size: 14px; }
+.ok { color: var(--teal); font-size: 14px; }
+code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+img.logo { width: 220px; display: block; margin: 0 auto 22px; }

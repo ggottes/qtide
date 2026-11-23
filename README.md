@@ -6,6 +6,7 @@ ones you need.
 
 | zip | module | signing in | what you get |
 | --- | --- | --- | --- |
+| `qtide-pool.mochyymodule.zip` | **Qtide — Pool** | a Qtide server link ([`server/`](server)) | your own Tidal/Qobuz through that server; the phone never holds a key |
 | `qtide-tidal.mochyymodule.zip` | **Qtide — Tidal** | **Sign in** → link.tidal.com (or a pasted refresh token) | FLAC 16/44.1 and, where the master allows, **hi-res up to 24-bit** (as DASH); AAC 320 / 96 on the High chip |
 | `qtide-qobuz.mochyymodule.zip` | **Qtide — Qobuz** | **Sign in** → play.qobuz.com (or a pasted `X-User-Auth-Token`) | FLAC 16/44.1, up to 24-bit on Studio accounts |
 | `qtide-deezer.mochyymodule.zip` | **Qtide — Deezer** | the `arl` cookie, copied from deezer.com | **FLAC** on a HiFi account, MP3 320 otherwise — the file is decrypted in the module |
@@ -89,10 +90,12 @@ module/src/com/qtide/
 ├── Blowfish.kt           Deezer's striped files are decrypted with this
 ├── Ladder.kt             one quality chip's steps, best first
 ├── SignIn.kt             what the sign-in browser's headers become
+├── QtidePool.kt          the pool module: asks a Qtide server, holds no keys
 ├── AccountLabel.kt       the one line on the page: who is signed in, on what plan
 ├── Art.kt                the icon and banner, as links mochy can load
 └── Json.kt               a small json reader/writer: no dependencies but kotlin
 assets/                    icons/icon-<service>.png (512²) and banner/banner.png (1200×600)
+server/                    the pool: Next.js on Vercel, see server/README.md
 tools/AndroidManifest.xml  the apk's shell; build.sh swaps the entry class into it
 build.sh, toolchain.sh     one zip per service
 ```

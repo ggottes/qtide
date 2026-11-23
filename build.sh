@@ -85,12 +85,14 @@ if [ "$RELEASE" = "1" ] && [ -n "$KEYSTORE" ]; then
   TIDAL_OUT=qtide-tidal.mochyymodule.zip
   QOBUZ_OUT=qtide-qobuz.mochyymodule.zip
   DEEZER_OUT=qtide-deezer.mochyymodule.zip
+  POOL_OUT=qtide-pool.mochyymodule.zip
   # a release run leaves the debug zips alone: both go in one release
   : > /dev/null
 else
   TIDAL_OUT=qtide-tidal-debug.mochyymodule.zip
   QOBUZ_OUT=qtide-qobuz-debug.mochyymodule.zip
   DEEZER_OUT=qtide-deezer-debug.mochyymodule.zip
+  POOL_OUT=qtide-pool-debug.mochyymodule.zip
 fi
 
 echo "2/3 zips"
@@ -98,6 +100,7 @@ echo "2/3 zips"
 build_one com.qtide.QtideTidal  qtide-tidal${SUFFIX}  "Qtide — Tidal"  "Tidal: your own account, lossless and hi-res where it has it" "search,stream" "$TIDAL_OUT"  assets/icons/icon-tidal.png
 build_one com.qtide.QtideQobuz  qtide-qobuz${SUFFIX}  "Qtide — Qobuz"  "Qobuz: your own account, FLAC up to 24-bit on a Studio plan" "search,stream" "$QOBUZ_OUT"  assets/icons/icon-qobuz.png
 build_one com.qtide.QtideDeezer qtide-deezer${SUFFIX} "Qtide — Deezer" "Deezer: your own account, FLAC on a HiFi plan" "search,stream" "$DEEZER_OUT"  assets/icons/icon-deezer.png
+build_one com.qtide.QtidePool   qtide-pool${SUFFIX}   "Qtide — Pool"   "Your own Tidal and Qobuz through a Qtide server" "search,stream" "$POOL_OUT"  assets/icons/icon-pool.png
 
 # the sign-in helper, next to the zips: a phone can open it straight from the chat, no site needed
 cp docs/tidal.html build/tidal.html
