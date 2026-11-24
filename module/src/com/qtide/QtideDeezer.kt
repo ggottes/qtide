@@ -33,7 +33,7 @@ class QtideDeezer : SourceModule, ModuleFields, ModuleArt {
     override val info = ModuleInfo(
         id = "qtide-deezer",
         name = "Qtide — Deezer",
-        version = "1.4",
+        version = "1.5",
         description = "Deezer: your own account, FLAC on a HiFi plan",
         sourceUrl = "https://github.com/ggottes/qtide",
         author = "geisselgottes",

@@ -39,6 +39,10 @@ internal object Qobuz {
     /** the last answer's status, for the page when a call comes back empty */
     private var lastCode: Int? = null
 
+    private const val KEYS = "appKeys"
+    private const val KEYS_AT = "appKeysAt"
+    private const val KEY_TTL = 24L * 60 * 60 * 1000
+
     /** what went wrong the last time [login] came back empty, as a sentence for the module's page */
     var lastRefusal = ""
         private set
@@ -57,10 +61,24 @@ internal object Qobuz {
         var id = appId.trim()
         var secrets = if (appSecret.isBlank()) emptyList() else listOf(appSecret.trim())
 
+        // the bundle is 9 MB and only changes when Qobuz ships a release, so it is fetched once a day
+        // and kept: a search on a fresh install used to drag it down before the first answer
         if (id.isBlank() || secrets.isEmpty()) {
-            val scraped = scrape(host) ?: return null
-            if (id.isBlank()) id = scraped.first
-            if (secrets.isEmpty()) secrets = scraped.second
+            val cached = host.storage.get(KEYS)?.takeIf { it.isNotBlank() }?.split('\n')
+            val fetchedAt = host.storage.get(KEYS_AT)?.toLongOrNull() ?: 0L
+            val fresh = cached != null && cached.size > 2 && System.currentTimeMillis() - fetchedAt < KEY_TTL
+            val scraped = if (fresh) {
+                cached[0] to cached.drop(1).filter { it.isNotBlank() }
+            } else {
+                scrape(host)?.also { (found, foundSecrets) ->
+                    host.storage.set(KEYS, (listOf(found) + foundSecrets).joinToString("\n"))
+                    host.storage.set(KEYS_AT, "${System.currentTimeMillis()}")
+                }
+            }
+            // a stale copy is only used when the bundle can't be read right now
+            val keys = scraped ?: cached?.takeIf { it.size > 2 }?.let { it[0] to it.drop(1) } ?: return null
+            if (id.isBlank()) id = keys.first
+            if (secrets.isEmpty()) secrets = keys.second
         }
 
         val me = call(host, "user/get", mapOf("app_id" to id), userToken)

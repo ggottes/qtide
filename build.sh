@@ -62,7 +62,7 @@ build_one() {
 import json, sys, zipfile
 apk, out, mid, name, desc, resources, icon = sys.argv[1:8]
 manifest = {
-    "id": mid, "name": name, "version": "1.4", "author": "geisselgottes",
+    "id": mid, "name": name, "version": "1.5", "author": "geisselgottes",
     "description": desc, "resources": [r for r in resources.split(",") if r], "code": "module.apk",
     # the pictures are also beside the manifest, the way a link module carries its own
     "icon": "icon.png", "banner": "banner.png",

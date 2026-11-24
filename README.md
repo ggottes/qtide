@@ -8,7 +8,7 @@ ones you need.
 | --- | --- | --- | --- |
 | `qtide-pool.mochyymodule.zip` | **Qtide — Pool** | a Qtide server link ([`server/`](server)) | your own Tidal/Qobuz through that server; the phone never holds a key |
 | `qtide-tidal.mochyymodule.zip` | **Qtide — Tidal** | **Sign in** → link.tidal.com (or a pasted refresh token) | FLAC 16/44.1 and, where the master allows, **hi-res up to 24-bit** (as DASH); AAC 320 / 96 on the High chip |
-| `qtide-qobuz.mochyymodule.zip` | **Qtide — Qobuz** | **Sign in** → play.qobuz.com (or a pasted `X-User-Auth-Token`) | FLAC 16/44.1, up to 24-bit on Studio accounts |
+| `qtide-qobuz.mochyymodule.zip` | **Qtide — Qobuz** | **Sign in** → play.qobuz.com (or a pasted `X-User-Auth-Token`) | FLAC 16/44.1, up to 24/192 on Studio accounts; CDN links, so downloads work |
 | `qtide-deezer.mochyymodule.zip` | **Qtide — Deezer** | the `arl` cookie, copied from deezer.com | **FLAC** on a HiFi account, MP3 320 otherwise — the file is decrypted in the module |
 
 Install any combination. Mochy asks players in the order you drag them on the modules page, so put
